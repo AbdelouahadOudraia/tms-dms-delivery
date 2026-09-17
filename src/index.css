@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-primary: #0057A8;
+    --color-primary-hover: #004280;
+    --color-secondary: #1976D2;
+    --color-accent: #D71920;
+    --color-highlight: #FFD200;
+    --color-success: #2E9E5B;
+    --color-warning: #E8722C;
+    --color-danger: #7F1D1D;
+    --color-ink: #1D2229;
+    --color-muted: #5B6470;
+    --color-border: #DDE7F0;
+    --color-surface: #FFFFFF;
+    --color-canvas: #F3F7FB;
+    --radius-ui: 10px;
+    --shadow-ui: 0 1px 2px rgb(15 23 42 / 0.06);
+  }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--color-canvas);
+    color: var(--color-ink);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--color-secondary);
+    outline-offset: 2px;
+  }
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  vertical-align: middle;
+}
+
+.font-code-tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "cv05" 1;
+}
+
+.scrollbar-soft {
+  scrollbar-width: thin;
+  scrollbar-color: #B7C8DA transparent;
+}
+
+.scrollbar-soft::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-soft::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-soft::-webkit-scrollbar-thumb {
+  background: #B7C8DA;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.scrollbar-soft::-webkit-scrollbar-thumb:hover {
+  background: #8EA7BE;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.signature-path {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: drawSignature 2.2s ease-out forwards;
+}
+
+@keyframes drawSignature {
+  to {
+    stroke-dashoffset: 0;
+  }
+}

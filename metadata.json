@@ -1,0 +1,6 @@
+{
+  "name": "TMS Driver — Gestion de Tournée & e-POD",
+  "description": "Application chauffeur TMS/DMS pour la gestion de tournée, navigation, suivi des colis et preuve de livraison électronique (e-POD).",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
