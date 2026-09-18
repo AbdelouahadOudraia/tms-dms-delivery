@@ -7,7 +7,7 @@ export const TourCompletedScreen: React.FC = () => {
   const currentTour = tours[0];
   const [isClosed, setIsClosed] = useState(false);
 
-  const myDeliveries = deliveries.filter((d) => d.tourId === currentTour.id && d.sequence <= currentTour.deliveriesCount);
+  const myDeliveries = deliveries.filter((d) => d.tourId === currentTour.id);
   const successCount = myDeliveries.filter((d) => d.status === 'Validée' || d.status === 'À valider').length;
   const failedCount = myDeliveries.filter((d) => d.status === 'Échec' || d.status === 'Rejetée').length;
   const rate = myDeliveries.length ? Math.round((successCount / myDeliveries.length) * 100) : 0;

@@ -8,11 +8,13 @@ export const DeliveriesScreen: React.FC = () => {
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
 
   const tourDeliveries = deliveries
-    .filter((d) => d.tourId === currentTour.id && d.sequence <= currentTour.deliveriesCount)
+    .filter((d) => d.tourId === currentTour.id)
     .sort((a, b) => a.sequence - b.sequence);
 
   const completedCount = tourDeliveries.filter((d) => d.status === 'Validée' || d.status === 'À valider').length;
-  const progressPercent = tourDeliveries.length ? Math.round((completedCount / tourDeliveries.length) * 100) : 0;
+  const failedCount = tourDeliveries.filter((d) => d.status === 'Échec' || d.status === 'Rejetée').length;
+  const processedCount = completedCount + failedCount;
+  const progressPercent = tourDeliveries.length ? Math.round((processedCount / tourDeliveries.length) * 100) : 0;
 
   const handleSelectDelivery = (delivery: Delivery) => {
     setSelectedDeliveryId(delivery.id);
@@ -47,8 +49,8 @@ export const DeliveriesScreen: React.FC = () => {
 
       <div className="shrink-0 border-b border-[#DDE7F0] bg-white px-4 py-3">
         <div className="flex items-center justify-between text-xs">
-          <span className="font-semibold text-[#5B6470]">Progression livraisons</span>
-          <span className="font-mono font-bold text-[#0057A8]">{completedCount}/{tourDeliveries.length}</span>
+          <span className="font-semibold text-[#5B6470]">Arrêts traités</span>
+          <span className="font-mono font-bold text-[#0057A8]">{processedCount}/{tourDeliveries.length}</span>
         </div>
         <MobileProgressBar value={progressPercent} className="mt-2" />
       </div>

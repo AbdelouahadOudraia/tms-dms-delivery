@@ -6,7 +6,11 @@ import {
   Vehicle,
   Incident,
   DeliveryStatus,
+  TourStatus,
   ProofOfDelivery,
+  DeliveryAddress,
+  DeliveryZone,
+  RouteOptimizationResult,
 } from '../types';
 import {
   INITIAL_DELIVERIES,
@@ -14,6 +18,8 @@ import {
   INITIAL_DRIVERS,
   INITIAL_VEHICLES,
   INITIAL_INCIDENTS,
+  INITIAL_ADDRESSES,
+  INITIAL_ZONES,
 } from '../data/tmsMockData';
 
 interface TmsContextType {
@@ -23,6 +29,9 @@ interface TmsContextType {
   drivers: Driver[];
   vehicles: Vehicle[];
   incidents: Incident[];
+  addresses: DeliveryAddress[];
+  zones: DeliveryZone[];
+  lastRouteOptimization: RouteOptimizationResult | null;
   currentDriver: Driver;
   currentTour: Tour;
   selectedDeliveryId: string;
@@ -64,8 +73,19 @@ interface TmsContextType {
     comment: string,
     photoUrl?: string
   ) => void;
+  recalculateRoute: (
+    deliveryId: string,
+    incidentType: string,
+    reason: string,
+    comment?: string
+  ) => RouteOptimizationResult | null;
+  confirmDeliveryOrder: (deliveryId: string) => void;
   validateDelivery: (deliveryId: string) => void;
   rejectDelivery: (deliveryId: string, reason: string, comment: string) => void;
+  addDriver: (driver: Omit<Driver, 'id'>) => Driver;
+  addVehicle: (vehicle: Vehicle) => Vehicle;
+  addAddress: (address: Omit<DeliveryAddress, 'id'>) => DeliveryAddress;
+  addZone: (zone: Omit<DeliveryZone, 'id'>) => DeliveryZone;
   resetDemoData: () => void;
 }
 
@@ -78,12 +98,37 @@ const isClosedDeliveryStatus = (status: DeliveryStatus) =>
   status === 'Rejetée' ||
   status === 'Retournée';
 
+const resolveTourStatus = (
+  status: TourStatus,
+  completedCount: number,
+  deliveriesCount: number
+): TourStatus => {
+  const allStopsHandled = deliveriesCount > 0 && completedCount >= deliveriesCount;
+  if (allStopsHandled && (status === 'En cours' || status === 'Affectée')) return 'À clôturer';
+  return status;
+};
+
+const synchronizeTourCounters = (tours: Tour[], deliveries: Delivery[]) =>
+  tours.map((tour) => {
+    const tourDeliveries = deliveries.filter((delivery) => delivery.tourId === tour.id);
+    const completedCount = tourDeliveries.filter((delivery) => isClosedDeliveryStatus(delivery.status)).length;
+    return {
+      ...tour,
+      deliveriesCount: tourDeliveries.length,
+      completedCount,
+      status: resolveTourStatus(tour.status, completedCount, tourDeliveries.length),
+    };
+  });
+
 export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [deliveries, setDeliveries] = useState<Delivery[]>(INITIAL_DELIVERIES);
-  const [tours, setTours] = useState<Tour[]>(INITIAL_TOURS);
-  const [drivers] = useState<Driver[]>(INITIAL_DRIVERS);
-  const [vehicles] = useState<Vehicle[]>(INITIAL_VEHICLES);
+  const [tours, setTours] = useState<Tour[]>(() => synchronizeTourCounters(INITIAL_TOURS, INITIAL_DELIVERIES));
+  const [drivers, setDrivers] = useState<Driver[]>(INITIAL_DRIVERS);
+  const [vehicles, setVehicles] = useState<Vehicle[]>(INITIAL_VEHICLES);
   const [incidents, setIncidents] = useState<Incident[]>(INITIAL_INCIDENTS);
+  const [addresses, setAddresses] = useState<DeliveryAddress[]>(INITIAL_ADDRESSES as unknown as DeliveryAddress[]);
+  const [zones, setZones] = useState<DeliveryZone[]>(INITIAL_ZONES as unknown as DeliveryZone[]);
+  const [lastRouteOptimization, setLastRouteOptimization] = useState<RouteOptimizationResult | null>(null);
 
   // Active Driver & Tour for simulation
   const currentDriver = drivers[0]; // Youssef El Amrani
@@ -111,6 +156,20 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }) => {
     const driver = drivers.find((d) => d.id === payload.driverId) || drivers[0];
     const vehicle = vehicles.find((v) => v.id === payload.vehicleId) || vehicles[0];
+    const zoneDistricts = payload.zone
+      .match(/\(([^)]+)\)/)?.[1]
+      .split(',')
+      .map((district) => district.trim().toLowerCase()) || [];
+    const eligibleDeliveryIds = payload.deliveryIds.filter((deliveryId) => {
+      const delivery = deliveries.find((item) => item.id === deliveryId);
+      return (
+        delivery &&
+        delivery.status === 'À planifier' &&
+        !delivery.tourId &&
+        delivery.deliveryDate === payload.date &&
+        zoneDistricts.includes(delivery.district.toLowerCase())
+      );
+    });
     const nextNumber =
       Math.max(
         ...tours
@@ -126,7 +185,7 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       driverPhone: driver.phone,
       vehicleId: vehicle.id,
       vehicleModel: vehicle.model,
-      deliveriesCount: payload.deliveryIds.length,
+      deliveriesCount: eligibleDeliveryIds.length,
       completedCount: 0,
       departureTime: payload.departureTime,
       estimatedEndTime: payload.estimatedEndTime,
@@ -137,7 +196,7 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTours((prev) => [newTour, ...prev]);
     setDeliveries((prev) =>
       prev.map((delivery) => {
-        const sequenceIndex = payload.deliveryIds.indexOf(delivery.id);
+        const sequenceIndex = eligibleDeliveryIds.indexOf(delivery.id);
         if (sequenceIndex === -1) return delivery;
 
         return {
@@ -301,6 +360,7 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return {
             ...t,
             completedCount,
+            status: resolveTourStatus(t.status, completedCount, t.deliveriesCount),
           };
         }
         return t;
@@ -343,6 +403,7 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           return {
             ...t,
             completedCount,
+            status: resolveTourStatus(t.status, completedCount, t.deliveriesCount),
           };
         })
       );
@@ -364,6 +425,122 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       setIncidents((prev) => [newInc, ...prev]);
     }
+  };
+
+
+
+  // Mock route recalculation after client call incident
+  const recalculateRoute = (
+    deliveryId: string,
+    incidentType: string,
+    reason: string,
+    comment: string = ''
+  ) => {
+    const target = deliveries.find((d) => d.id === deliveryId);
+    if (!target) return null;
+
+    const remainingStops = deliveries
+      .filter(
+        (d) =>
+          d.tourId === target.tourId &&
+          d.sequence > target.sequence &&
+          (d.status === 'Affectée' || d.status === 'Planifiée' || d.status === 'À planifier' || d.status === 'En route')
+      )
+      .sort((a, b) => a.sequence - b.sequence);
+
+    const incidentId = `INC-${Date.now().toString().slice(-5)}`;
+    const optimization: RouteOptimizationResult = {
+      deliveryId,
+      incidentId,
+      reorderedStops: Math.min(remainingStops.length, 3),
+      newEta: '13:42',
+      remainingDistance: '18,4 km',
+      message: 'Tournée recalculée',
+    };
+
+    const newIncident: Incident = {
+      id: incidentId,
+      deliveryId: target.id,
+      tourId: target.tourId,
+      customerName: target.customerName,
+      driverName: target.driverName,
+      type: incidentType,
+      description: comment || reason,
+      timestamp: '10:46',
+      resolved: false,
+      status: 'Nouveau',
+      severity: incidentType === 'Refus client' ? 'Bloquant' : 'Information',
+    };
+
+    setDeliveries((prev) => {
+      const orderedRemainingIds = remainingStops
+        .slice()
+        .sort((a, b) => a.district.localeCompare(b.district))
+        .map((d) => d.id);
+
+      return prev.map((delivery) => {
+        if (delivery.id === deliveryId) {
+          return {
+            ...delivery,
+            status: 'Échec' as DeliveryStatus,
+            deliveryStatus: 'Échec de livraison',
+            podStatus: 'À collecter',
+            failureReason: incidentType,
+            failureComment: comment || reason,
+          };
+        }
+
+        const newIndex = orderedRemainingIds.indexOf(delivery.id);
+        if (newIndex !== -1) {
+          return {
+            ...delivery,
+            sequence: target.sequence + newIndex,
+            status: newIndex === 0 ? ('En route' as DeliveryStatus) : delivery.status,
+            deliveryStatus: newIndex === 0 ? 'En cours' : 'À livrer',
+          };
+        }
+
+        return delivery;
+      });
+    });
+
+    setTours((prev) =>
+      prev.map((tour) => {
+        if (tour.id !== target.tourId) return tour;
+        return {
+          ...tour,
+          completedCount: Math.min(tour.deliveriesCount, tour.completedCount + 1),
+          status: resolveTourStatus(
+            tour.status,
+            Math.min(tour.deliveriesCount, tour.completedCount + 1),
+            tour.deliveriesCount
+          ),
+          estimatedEndTime: '13:42',
+        };
+      })
+    );
+
+    setIncidents((prev) => [newIncident, ...prev]);
+    setLastRouteOptimization(optimization);
+    return optimization;
+  };
+
+  const confirmDeliveryOrder = (deliveryId: string) => {
+    setDeliveries((prev) =>
+      prev.map((delivery) => {
+        if (delivery.id !== deliveryId || delivery.status !== 'À confirmer') return delivery;
+
+        return {
+          ...delivery,
+          status: 'À planifier' as DeliveryStatus,
+          tourId: '',
+          sequence: 0,
+          driverId: '',
+          driverName: 'Non affecté',
+          vehicleId: '',
+        };
+      })
+    );
   };
 
   // Backoffice validates delivery -> status becomes "Validée"
@@ -412,11 +589,48 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
+  const addDriver = (payload: Omit<Driver, 'id'>) => {
+    const driver: Driver = {
+      ...payload,
+      id: `DRV-${String(drivers.length + 1).padStart(3, '0')}`,
+    };
+    setDrivers((prev) => [...prev, driver]);
+    return driver;
+  };
+
+  const addVehicle = (vehicle: Vehicle) => {
+    setVehicles((prev) => [...prev, vehicle]);
+    return vehicle;
+  };
+
+  const addAddress = (payload: Omit<DeliveryAddress, 'id'>) => {
+    const address: DeliveryAddress = {
+      ...payload,
+      id: `ADR-${String(addresses.length + 1).padStart(3, '0')}`,
+    };
+    setAddresses((prev) => [...prev, address]);
+    return address;
+  };
+
+  const addZone = (payload: Omit<DeliveryZone, 'id'>) => {
+    const zone: DeliveryZone = {
+      ...payload,
+      id: `ZONE-${String(zones.length + 1).padStart(3, '0')}`,
+    };
+    setZones((prev) => [...prev, zone]);
+    return zone;
+  };
+
   // Reset demo
   const resetDemoData = () => {
     setDeliveries(INITIAL_DELIVERIES);
-    setTours(INITIAL_TOURS);
+    setTours(synchronizeTourCounters(INITIAL_TOURS, INITIAL_DELIVERIES));
     setIncidents(INITIAL_INCIDENTS);
+    setDrivers(INITIAL_DRIVERS);
+    setVehicles(INITIAL_VEHICLES);
+    setAddresses(INITIAL_ADDRESSES as unknown as DeliveryAddress[]);
+    setZones(INITIAL_ZONES as unknown as DeliveryZone[]);
+    setLastRouteOptimization(null);
     setSelectedDeliveryId('CMD-45821');
   };
 
@@ -428,6 +642,9 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         drivers,
         vehicles,
         incidents,
+        addresses,
+        zones,
+        lastRouteOptimization,
         currentDriver,
         currentTour,
         selectedDeliveryId,
@@ -444,8 +661,14 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         verifyDeliveryItems,
         confirmDeliveryPOD,
         failDelivery,
+        recalculateRoute,
+        confirmDeliveryOrder,
         validateDelivery,
         rejectDelivery,
+        addDriver,
+        addVehicle,
+        addAddress,
+        addZone,
         resetDemoData,
       }}
     >

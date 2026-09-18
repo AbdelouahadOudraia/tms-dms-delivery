@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTms } from '../../../context/TmsContext';
+import { GoogleMapCard } from '../../maps/GoogleMapCard';
 
 export const NavigationScreen: React.FC = () => {
   const {
@@ -7,14 +8,15 @@ export const NavigationScreen: React.FC = () => {
     selectedDeliveryId,
     markArrived,
     setDriverScreen,
+    lastRouteOptimization,
   } = useTms();
 
   const delivery =
     deliveries.find((d) => d.id === selectedDeliveryId) || deliveries[1];
-  const googleMapSrc = `https://www.google.com/maps?q=${delivery.coordinates.lat},${delivery.coordinates.lng}&z=15&output=embed`;
 
   const [simulatedDistance, setSimulatedDistance] = useState(2.4);
   const [speed, setSpeed] = useState(44);
+  const [mapKey, setMapKey] = useState(0);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -59,16 +61,20 @@ export const NavigationScreen: React.FC = () => {
         </button>
       </div>
 
-      {/* Google Maps GPS View */}
+      {/* Google Maps view, with the operational HUD kept above the map. */}
       <div className="flex-1 relative bg-[#E8F2FB] overflow-hidden flex items-center justify-center">
-        <iframe
-          title={`Google Maps - ${delivery.customerName}`}
-          src={googleMapSrc}
-          className="absolute inset-0 h-full w-full border-0"
-          loading="lazy"
-          referrerPolicy="no-referrer-when-downgrade"
+        <GoogleMapCard
+          key={mapKey}
+          query={`${delivery.coordinates.lat},${delivery.coordinates.lng}`}
+          zoom={15}
+          title={`Carte Google Maps vers ${delivery.customerName}`}
+          className="absolute inset-0 h-full w-full rounded-none border-0"
+          markers={[]}
+          routePath={[]}
+          showOpenLink={false}
+          showLegend={false}
+          showMarkerLabels={false}
         />
-        <div className="absolute inset-0 bg-[#0057A8]/5 pointer-events-none" />
 
         {/* Current Vehicle Position Marker */}
         <div className="absolute top-[52%] left-[42%] -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center">
@@ -93,9 +99,16 @@ export const NavigationScreen: React.FC = () => {
             </span>
           </div>
           <span className="text-[10px] font-bold bg-[#E8722C] text-white px-2 py-0.5 rounded-full mt-1 shadow-md whitespace-nowrap">
-            Sara Alaoui
+            {delivery.customerName}
           </span>
         </div>
+
+        {lastRouteOptimization && (
+          <div className="absolute top-4 left-4 right-4 z-30 rounded-2xl border border-[#BEE3CE] bg-white/95 px-3 py-2 text-xs text-[#176B3A] shadow-lg">
+            <strong className="block">Itinéraire optimisé</strong>
+            <span>{lastRouteOptimization.reorderedStops} arrêts réordonnés • Nouvelle ETA {lastRouteOptimization.newEta}</span>
+          </div>
+        )}
 
         {/* Floating Speedometer & GPS Accuracy badge */}
         <div className="absolute bottom-28 left-4 z-20 flex flex-col gap-2">
@@ -113,7 +126,7 @@ export const NavigationScreen: React.FC = () => {
 
         {/* Recenter button */}
         <button
-          onClick={() => {}}
+          onClick={() => setMapKey((value) => value + 1)}
           className="absolute bottom-28 right-4 z-20 w-10 h-10 rounded-full bg-white text-[#1D2229] shadow-lg flex items-center justify-center hover:bg-slate-100"
           title="Recentrer la carte"
         >

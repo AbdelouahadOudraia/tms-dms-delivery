@@ -1,216 +1,67 @@
 import React, { useState } from 'react';
+import { PageHeader } from '../common/BackofficeUI';
+
+const SettingSection: React.FC<{ title: string; description: string; children: React.ReactNode }> = ({ title, description, children }) => (
+  <section className="border-b border-[#E2E8F0] py-6 first:pt-0 last:border-0 last:pb-0">
+    <div className="grid gap-6 lg:grid-cols-[240px_1fr]">
+      <div><h2 className="text-base font-semibold text-[#1F2937]">{title}</h2><p className="mt-1 text-[13px] leading-5 text-[#64748B]">{description}</p></div>
+      <div className="min-w-0">{children}</div>
+    </div>
+  </section>
+);
+
+const ToggleRow: React.FC<{ title: string; description: string; checked: boolean; onChange: (checked: boolean) => void }> = ({ title, description, checked, onChange }) => (
+  <label className="flex cursor-pointer items-start justify-between gap-6 border-b border-[#E2E8F0] py-4 first:pt-0 last:border-0 last:pb-0">
+    <span><span className="block text-sm font-medium text-[#1F2937]">{title}</span><span className="mt-1 block text-[13px] leading-5 text-[#64748B]">{description}</span></span>
+    <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[#0057A8]" />
+  </label>
+);
 
 export const SettingsScreen: React.FC = () => {
-  const [gpsTolerance, setGpsTolerance] = useState<number>(50);
-  const [requirePhoto, setRequirePhoto] = useState<boolean>(true);
-  const [requireSignature, setRequireSignature] = useState<boolean>(true);
-  const [delayThreshold, setDelayThreshold] = useState<number>(15);
-  const [autoNotifyCustomer, setAutoNotifyCustomer] = useState<boolean>(true);
-  const [hubName, setHubName] = useState<string>('Hub Central Casablanca - Ain Sebaa');
-  const [savedToast, setSavedToast] = useState<boolean>(false);
+  const [gpsTolerance, setGpsTolerance] = useState(50);
+  const [requirePhoto, setRequirePhoto] = useState(true);
+  const [requireSignature, setRequireSignature] = useState(true);
+  const [delayThreshold, setDelayThreshold] = useState(15);
+  const [autoNotifyCustomer, setAutoNotifyCustomer] = useState(true);
+  const [hubName, setHubName] = useState('Hub Central Casablanca - Ain Sebaa');
+  const [savedToast, setSavedToast] = useState(false);
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSave = (event: React.FormEvent) => {
+    event.preventDefault();
     setSavedToast(true);
     setTimeout(() => setSavedToast(false), 3000);
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#F5F6F7] overflow-y-auto scrollbar-soft">
-      {/* Header */}
-      <div className="bg-white border-b border-[#E3E5E8] px-6 py-4 flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-xl font-bold text-[#1D2229]">
-            Paramètres du système TMS / DMS
-          </h1>
-          <p className="text-xs text-[#5B6470] mt-0.5">
-            Règles d'arbitrage e-POD, seuils opérationnels et configuration des dépôts.
-          </p>
-        </div>
+    <div className="bo-page overflow-y-auto scrollbar-soft">
+      <div className="mx-auto w-full max-w-[1000px]">
+        <PageHeader
+          title="Règles & workflow"
+          subtitle="Configuration du dépôt, des preuves de livraison et des alertes opérationnelles"
+          actions={savedToast ? <span className="inline-flex h-9 items-center gap-2 rounded-md bg-[#F0FDF4] px-3 text-[13px] font-medium text-[#166534]"><span className="material-symbols-outlined text-[18px]">check_circle</span>Paramètres enregistrés</span> : undefined}
+        />
+        <form onSubmit={handleSave} className="bo-panel p-6">
+          <SettingSection title="Dépôt principal" description="Contexte logistique utilisé par défaut dans le backoffice.">
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="text-[13px] font-medium text-[#475569]">Nom du hub / entrepôt<input value={hubName} onChange={(event) => setHubName(event.target.value)} className="bo-input mt-1.5 w-full" /></label>
+              <label className="text-[13px] font-medium text-[#475569]">Ville et région<input value="Casablanca-Settat, Maroc" disabled className="bo-input mt-1.5 w-full bg-[#F8FAFC] text-[#64748B]" /></label>
+            </div>
+          </SettingSection>
 
-        {savedToast && (
-          <div className="px-3 py-1.5 bg-[#EAF5EE] text-[#176B3A] border border-[#BEE3CE] text-xs font-semibold rounded-lg flex items-center gap-1.5 animate-in fade-in">
-            <span className="material-symbols-outlined text-[16px]">check_circle</span>
-            <span>Paramètres enregistrés avec succès</span>
-          </div>
-        )}
+          <SettingSection title="Preuve de livraison" description="Pièces exigées avant la finalisation d’une livraison par le chauffeur.">
+            <ToggleRow title="Photo obligatoire" description="Empêche la finalisation si aucune photo du colis n’est capturée." checked={requirePhoto} onChange={setRequirePhoto} />
+            <ToggleRow title="Signature obligatoire" description="Demande la signature tactile et le nom du réceptionnaire." checked={requireSignature} onChange={setRequireSignature} />
+            <div className="pt-4"><div className="mb-2 flex items-center justify-between text-sm"><span className="font-medium text-[#1F2937]">Tolérance GPS</span><span className="font-mono font-medium text-[#0057A8]">± {gpsTolerance} mètres</span></div><input type="range" min={20} max={200} step={10} value={gpsTolerance} onChange={(event) => setGpsTolerance(Number(event.target.value))} className="w-full accent-[#0057A8]" /><p className="mt-2 text-[13px] leading-5 text-[#64748B]">Une preuve réalisée au-delà de ce rayon déclenche un avertissement de non-conformité.</p></div>
+          </SettingSection>
+
+          <SettingSection title="Notifications" description="Seuil de retard et information automatique du client.">
+            <div className="border-b border-[#E2E8F0] pb-4"><div className="mb-2 flex items-center justify-between text-sm"><span className="font-medium text-[#1F2937]">Alerte de retard après</span><span className="font-mono font-medium text-[#C2410C]">{delayThreshold} minutes</span></div><input type="range" min={5} max={60} step={5} value={delayThreshold} onChange={(event) => setDelayThreshold(Number(event.target.value))} className="w-full accent-[#E8722C]" /><p className="mt-2 text-[13px] leading-5 text-[#64748B]">Dérive autorisée par rapport au créneau prévu avant de qualifier la livraison en retard.</p></div>
+            <div className="pt-4"><ToggleRow title="Notification client automatique" description="Envoie un message au passage du statut à « En route » avec le lien de suivi." checked={autoNotifyCustomer} onChange={setAutoNotifyCustomer} /></div>
+          </SettingSection>
+
+          <div className="mt-6 flex justify-end"><button type="submit" className="bo-button-primary"><span className="material-symbols-outlined text-[18px]">save</span>Enregistrer les modifications</button></div>
+        </form>
       </div>
-
-      <form onSubmit={handleSave} className="p-6 max-w-4xl space-y-6">
-        {/* Section 1: Configuration du Dépôt */}
-        <div className="bg-white rounded-2xl p-5 border border-[#E3E5E8] shadow-xs space-y-4">
-          <div className="flex items-center gap-2 border-b border-[#E3E5E8] pb-3">
-            <span className="material-symbols-outlined text-[22px] text-[#0057A8]">
-              warehouse
-            </span>
-            <h2 className="text-sm font-bold text-[#1D2229]">
-              Configuration du dépôt principal
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            <div>
-              <label className="font-semibold text-[#1D2229] block mb-1">
-                Nom du Hub / Entrepôt
-              </label>
-              <input
-                type="text"
-                value={hubName}
-                onChange={(e) => setHubName(e.target.value)}
-                className="w-full h-9 px-3 rounded-lg border border-[#E3E5E8] text-xs text-[#1D2229] focus:border-[#0057A8] focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="font-semibold text-[#1D2229] block mb-1">
-                Ville & Région logistique
-              </label>
-              <input
-                type="text"
-                defaultValue="Casablanca-Settat, Maroc"
-                className="w-full h-9 px-3 rounded-lg border border-[#E3E5E8] text-xs text-[#1D2229] bg-[#F5F6F7]"
-                disabled
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Section 2: Règles de Validation e-POD */}
-        <div className="bg-white rounded-2xl p-5 border border-[#E3E5E8] shadow-xs space-y-4">
-          <div className="flex items-center gap-2 border-b border-[#E3E5E8] pb-3">
-            <span className="material-symbols-outlined text-[22px] text-[#0057A8]">
-              verified
-            </span>
-            <h2 className="text-sm font-bold text-[#1D2229]">
-              Règles de validation des preuves de livraison (e-POD)
-            </h2>
-          </div>
-
-          <div className="space-y-3 text-xs">
-            <div className="flex items-center justify-between p-3 bg-[#F5F6F7] rounded-xl border border-[#E3E5E8]">
-              <div>
-                <span className="font-semibold text-[#1D2229] block">
-                  Exiger obligatoirement une photo du colis
-                </span>
-                <span className="text-[#5B6470] text-[11px]">
-                  Bloque la finalisation du chauffeur si aucune photo n'est capturée.
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={requirePhoto}
-                onChange={(e) => setRequirePhoto(e.target.checked)}
-                className="w-4 h-4 accent-[#0057A8] cursor-pointer"
-              />
-            </div>
-
-            <div className="flex items-center justify-between p-3 bg-[#F5F6F7] rounded-xl border border-[#E3E5E8]">
-              <div>
-                <span className="font-semibold text-[#1D2229] block">
-                  Exiger la signature tactile du réceptionnaire
-                </span>
-                <span className="text-[#5B6470] text-[11px]">
-                  Requiert le tracé manuscrit et le nom du tiers ayant accusé réception.
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={requireSignature}
-                onChange={(e) => setRequireSignature(e.target.checked)}
-                className="w-4 h-4 accent-[#0057A8] cursor-pointer"
-              />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-semibold text-[#1D2229]">
-                  Seuil de tolérance d'écart GPS (rayon max)
-                </span>
-                <span className="font-bold font-mono text-[#0057A8]">
-                  ± {gpsTolerance} mètres
-                </span>
-              </div>
-              <input
-                type="range"
-                min={20}
-                max={200}
-                step={10}
-                value={gpsTolerance}
-                onChange={(e) => setGpsTolerance(Number(e.target.value))}
-                className="w-full accent-[#0057A8] cursor-pointer"
-              />
-              <span className="text-[11px] text-[#5B6470]">
-                Au-delà de ce rayon entre les coordonnées du client et le mobile, un avertissement de non-conformité est levé.
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Section 3: Alertes & Retards */}
-        <div className="bg-white rounded-2xl p-5 border border-[#E3E5E8] shadow-xs space-y-4">
-          <div className="flex items-center gap-2 border-b border-[#E3E5E8] pb-3">
-            <span className="material-symbols-outlined text-[22px] text-[#E8722C]">
-              notifications_active
-            </span>
-            <h2 className="text-sm font-bold text-[#1D2229]">
-              Notifications & Seuils de retard
-            </h2>
-          </div>
-
-          <div className="space-y-3 text-xs">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-semibold text-[#1D2229]">
-                  Déclenchement d'alerte de retard automatique
-                </span>
-                <span className="font-bold font-mono text-[#E8722C]">
-                  + {delayThreshold} minutes
-                </span>
-              </div>
-              <input
-                type="range"
-                min={5}
-                max={60}
-                step={5}
-                value={delayThreshold}
-                onChange={(e) => setDelayThreshold(Number(e.target.value))}
-                className="w-full accent-[#E8722C] cursor-pointer"
-              />
-              <span className="text-[11px] text-[#5B6470]">
-                Temps de dérive par rapport au créneau initial avant qualification de la commande en "Retard".
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between p-3 bg-[#F5F6F7] rounded-xl border border-[#E3E5E8]">
-              <div>
-                <span className="font-semibold text-[#1D2229] block">
-                  Notification SMS / WhatsApp automatique au client
-                </span>
-                <span className="text-[#5B6470] text-[11px]">
-                  Envoi d'un message lors du passage du statut à « En route » avec le lien de suivi.
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={autoNotifyCustomer}
-                onChange={(e) => setAutoNotifyCustomer(e.target.checked)}
-                className="w-4 h-4 accent-[#0057A8] cursor-pointer"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Submit */}
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            className="px-5 py-2.5 bg-[#0057A8] hover:bg-[#004280] text-white text-xs font-bold rounded-xl shadow-sm transition-colors flex items-center gap-1.5"
-          >
-            <span className="material-symbols-outlined text-[18px]">save</span>
-            <span>Enregistrer les modifications</span>
-          </button>
-        </div>
-      </form>
     </div>
   );
 };

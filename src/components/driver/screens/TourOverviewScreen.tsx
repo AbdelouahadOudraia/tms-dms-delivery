@@ -8,12 +8,13 @@ export const TourOverviewScreen: React.FC = () => {
   const { currentTour, currentDriver, deliveries, setDriverScreen, setSelectedDeliveryId } = useTms();
 
   const tourDeliveries = deliveries
-    .filter((d) => d.tourId === currentTour.id && d.sequence <= currentTour.deliveriesCount)
+    .filter((d) => d.tourId === currentTour.id)
     .sort((a, b) => a.sequence - b.sequence);
 
   const completedCount = tourDeliveries.filter((d) => d.status === 'Validée' || d.status === 'À valider').length;
   const failedCount = tourDeliveries.filter((d) => d.status === 'Échec' || d.status === 'Rejetée').length;
-  const progressPercent = tourDeliveries.length ? Math.round((completedCount / tourDeliveries.length) * 100) : 0;
+  const processedCount = completedCount + failedCount;
+  const progressPercent = tourDeliveries.length ? Math.round((processedCount / tourDeliveries.length) * 100) : 0;
 
   const handleSelectDelivery = (delivery: Delivery) => {
     setSelectedDeliveryId(delivery.id);

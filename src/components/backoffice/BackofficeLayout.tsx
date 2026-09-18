@@ -8,182 +8,172 @@ import { ValidationScreen } from './ValidationScreen';
 import { AnomaliesScreen } from './AnomaliesScreen';
 import { FleetScreen } from './FleetScreen';
 import { SettingsScreen } from './SettingsScreen';
+import { ControlTowerScreen } from './ControlTowerScreen';
+import { AddressesScreen } from './AddressesScreen';
+import { ZonesScreen } from './ZonesScreen';
+import { PlanningScreen } from './PlanningScreen';
+import { ProvidersScreen } from './ProvidersScreen';
+import { countOpenOperationalIncidents } from '../../utils/operationalIncidents';
+
+const navSections = [
+  {
+    title: 'Pilotage',
+    items: [
+      { id: 'dashboard', label: 'Tableau de bord', icon: 'dashboard' },
+      { id: 'control-tower', label: 'Control Tower', icon: 'monitoring' },
+    ],
+  },
+  {
+    title: 'Transport',
+    items: [
+      { id: 'orders', label: 'Ordres de livraison', icon: 'receipt_long' },
+      { id: 'planning', label: 'Planification', icon: 'event_note' },
+      { id: 'tours', label: 'Tournées', icon: 'alt_route' },
+    ],
+  },
+  {
+    title: 'Livraison',
+    items: [
+      { id: 'deliveries', label: 'Livraisons', icon: 'local_shipping' },
+      { id: 'validation', label: 'Validation e-POD', icon: 'verified' },
+      { id: 'incidents', label: 'Incidents', icon: 'report' },
+    ],
+  },
+  {
+    title: 'Ressources',
+    items: [
+      { id: 'drivers', label: 'Chauffeurs', icon: 'person' },
+      { id: 'vehicles', label: 'Véhicules', icon: 'local_shipping' },
+      { id: 'providers', label: 'Prestataires', icon: 'business' },
+    ],
+  },
+  {
+    title: 'Référentiels',
+    items: [
+      { id: 'addresses', label: 'Adresses', icon: 'location_on' },
+      { id: 'zones', label: 'Zones', icon: 'map' },
+    ],
+  },
+  {
+    title: 'Configuration',
+    items: [{ id: 'settings', label: 'Règles & workflow', icon: 'settings' }],
+  },
+];
 
 export const BackofficeLayout: React.FC = () => {
-  const {
-    backofficeTab,
-    setBackofficeTab,
-    deliveries,
-  } = useTms();
+  const { backofficeTab, setBackofficeTab, deliveries, incidents } = useTms();
 
   const pendingPODCount = deliveries.filter((d) => d.status === 'À valider').length;
+  const incidentCount = countOpenOperationalIncidents(incidents, deliveries);
 
-  const NAV_ITEMS = [
-    {
-      id: 'dashboard',
-      label: 'Tableau de bord',
-      icon: 'dashboard',
-    },
-    {
-      id: 'orders',
-      label: 'Commandes',
-      icon: 'receipt_long',
-    },
-    {
-      id: 'tours',
-      label: 'Tournées',
-      icon: 'alt_route',
-    },
-    {
-      id: 'deliveries',
-      label: 'Livraisons',
-      icon: 'local_shipping',
-    },
-    {
-      id: 'drivers',
-      label: 'Chauffeurs',
-      icon: 'person',
-    },
-    {
-      id: 'vehicles',
-      label: 'Véhicules',
-      icon: 'local_shipping',
-    },
-    {
-      id: 'validation',
-      label: 'Validation',
-      icon: 'verified',
-      badge: pendingPODCount > 0 ? pendingPODCount : undefined,
-      badgeColor: 'bg-[#E8722C] text-white',
-    },
-    {
-      id: 'settings',
-      label: 'Paramètres',
-      icon: 'settings',
-    },
-  ];
-
-  // Map legacy tab keys if needed
   const normalizedTab =
     backofficeTab === 'tracking'
       ? 'deliveries'
+      : backofficeTab === 'tour-create'
+      ? 'tours'
       : backofficeTab === 'pending-validation'
       ? 'validation'
+      : backofficeTab === 'anomalies'
+      ? 'incidents'
       : backofficeTab;
 
+  const badgeFor = (itemId: string) => {
+    if (itemId === 'validation' && pendingPODCount > 0) return pendingPODCount;
+    if (itemId === 'incidents' && incidentCount > 0) return incidentCount;
+    return undefined;
+  };
+
+  const handleNav = (itemId: string) => setBackofficeTab(itemId);
+
   return (
-    <div className="flex-1 flex h-full bg-[#EEF3F8] overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-64 bg-[#FBFDFF] text-[#516173] flex flex-col justify-between shrink-0 select-none shadow-sm shadow-slate-200/80 border-r border-[#DDE7F0]">
+    <div className="backoffice-shell flex h-full flex-1 overflow-hidden bg-[#F5F7FA]">
+      <aside className="flex w-60 shrink-0 select-none flex-col justify-between border-r border-[#E2E8F0] bg-white text-[#475569]">
         <div className="flex-1 min-h-0 flex flex-col">
-          {/* Logo & Brand Header */}
-          <div className="p-5 border-b border-[#DDE7F0] flex items-center gap-3 bg-gradient-to-br from-[#003B73] via-[#0057A8] to-[#0067C5]">
-            <div className="w-10 h-10 rounded-2xl bg-white text-[#0057A8] flex items-center justify-center shadow-md shadow-blue-900/15">
-              <span className="material-symbols-outlined text-[24px]">
-                local_shipping
-              </span>
+          <div className="flex h-16 items-center gap-3 border-b border-[#E2E8F0] px-4">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-[#EFF6FF] text-[#0057A8]">
+              <span className="material-symbols-outlined text-[22px]">local_shipping</span>
             </div>
             <div>
-              <span className="text-base font-bold text-white tracking-tight block">
-                TMS Delivery
-              </span>
-              <span className="text-[10px] text-[#D6E9FA] font-bold uppercase tracking-wider block">
-                Dispatch Control Tower
-              </span>
+              <span className="block text-sm font-semibold text-[#1F2937]">TMS Delivery</span>
+              <span className="block text-xs text-[#64748B]">Exploitation transport</span>
             </div>
           </div>
 
-          {/* Nav Items */}
-          <nav className="flex-1 min-h-0 overflow-y-auto scrollbar-soft p-3 space-y-1">
-            <span className="text-[10px] uppercase font-bold text-[#7A8A9B] px-3 pt-2 pb-1 block tracking-wider">
-              Navigation métier
-            </span>
-            {NAV_ITEMS.map((item) => {
-              const isActive =
-                normalizedTab === item.id ||
-                (item.id === 'deliveries' && backofficeTab === 'tracking') ||
-                (item.id === 'validation' && backofficeTab === 'pending-validation');
+          <nav className="scrollbar-soft min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-4">
+            {navSections.map((section) => (
+              <div key={section.title}>
+                <span className="block px-3 pb-1.5 text-xs font-medium text-[#94A3B8]">{section.title}</span>
+                <div className="space-y-0.5">
+                  {section.items.map((item) => {
+                    const isActive = normalizedTab === item.id;
+                    const badge = badgeFor(item.id);
 
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setBackofficeTab(item.id)}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                    isActive
-                      ? 'bg-[#0057A8] text-white shadow-md shadow-blue-900/15 font-bold ring-1 ring-[#0057A8]'
-                      : 'text-[#516173] hover:text-[#0057A8] hover:bg-[#EEF3F8]'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className="material-symbols-outlined text-[18px]">
-                      {item.icon}
-                    </span>
-                    <span>{item.label}</span>
-                  </div>
-
-                  {item.badge !== undefined && (
-                    <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold font-mono ${item.badgeColor}`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleNav(item.id)}
+                        className={`relative flex h-10 w-full items-center justify-between rounded-md px-3 text-sm font-medium transition-colors ${
+                          isActive
+                            ? 'bg-[#EFF6FF] text-[#0057A8] before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-[#0057A8]'
+                            : 'text-[#475569] hover:bg-[#F8FAFC] hover:text-[#1F2937]'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
+                          <span>{item.label}</span>
+                        </span>
+                        {badge !== undefined && <span className="min-w-5 rounded-full bg-[#FFF7ED] px-1.5 py-0.5 text-center text-xs font-medium text-[#C2410C]">{badge}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
         </div>
 
-        {/* Dispatcher Session Footer */}
-        <div className="p-4 border-t border-[#DDE7F0] bg-[#EEF3F8]">
+        <div className="border-t border-[#E2E8F0] bg-white p-4">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-[#0057A8] text-white font-bold flex items-center justify-center text-xs shadow-inner">
-              KD
-            </div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#EFF6FF] text-xs font-semibold text-[#0057A8]">KD</div>
             <div className="min-w-0 flex-1">
-              <span className="text-xs font-bold text-[#1D2229] truncate block">
-                Karim Dispatcher
-              </span>
-              <span className="text-[10px] text-[#5B6470] truncate block">
-                Superviseur Logistique
-              </span>
+              <span className="block truncate text-sm font-medium text-[#1F2937]">Karim Dispatcher</span>
+              <span className="block truncate text-xs text-[#64748B]">Superviseur logistique</span>
             </div>
           </div>
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Topbar */}
-        <header className="h-12 bg-white/95 border-b border-[#DDE7F0] px-6 flex items-center justify-between shrink-0 backdrop-blur">
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-[#E2E8F0] bg-white px-6">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-[18px] text-[#1976D2]">warehouse</span>
-            <span className="text-xs font-bold text-[#5B6470]">Dépôt Central :</span>
-            <span className="text-xs font-bold text-[#1D2229]">
-              Casablanca Hub Ouest (Aïn Diab / Maarif)
-            </span>
+            <span className="text-[13px] text-[#64748B]">Dépôt central</span>
+            <span className="text-[13px] font-medium text-[#1F2937]">Casablanca Hub Ouest</span>
           </div>
-
           <div className="flex items-center gap-3 text-xs">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EAF5EE] text-[#176B3A] border border-[#BEE3CE] font-semibold">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#F0FDF4] px-2.5 py-1 text-xs font-medium text-[#166534]">
               <span className="w-2 h-2 rounded-full bg-[#2E9E5B]" />
-              Système connecté (Direct e-POD)
+              Mode démo · e-POD simulé
             </span>
-            <span className="text-[#5B6470] font-mono">15/09/2026 10:42</span>
+            <span className="font-mono text-xs text-[#64748B]">15/09/2026 10:42</span>
           </div>
         </header>
 
-        {/* Active Backoffice View */}
         <main className="flex-1 flex flex-col overflow-hidden">
           {normalizedTab === 'dashboard' && <DashboardScreen />}
+          {normalizedTab === 'control-tower' && <ControlTowerScreen />}
           {normalizedTab === 'orders' && <OrdersScreen />}
+          {normalizedTab === 'planning' && <PlanningScreen />}
           {normalizedTab === 'tours' && <ToursScreen />}
           {normalizedTab === 'deliveries' && <TrackingScreen />}
           {normalizedTab === 'drivers' && <FleetScreen defaultTab="drivers" />}
           {normalizedTab === 'vehicles' && <FleetScreen defaultTab="vehicles" />}
+          {normalizedTab === 'providers' && <ProvidersScreen />}
           {normalizedTab === 'validation' && <ValidationScreen />}
+          {normalizedTab === 'incidents' && <AnomaliesScreen />}
+          {normalizedTab === 'addresses' && <AddressesScreen />}
+          {normalizedTab === 'zones' && <ZonesScreen />}
           {normalizedTab === 'settings' && <SettingsScreen />}
-          {normalizedTab === 'anomalies' && <AnomaliesScreen />}
         </main>
       </div>
     </div>

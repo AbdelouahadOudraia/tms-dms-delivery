@@ -6,14 +6,13 @@ import { StatusBadge } from '../../common/StatusBadge';
 export const HomeScreen: React.FC = () => {
   const { currentTour, currentDriver, deliveries, setDriverScreen, setSelectedDeliveryId } = useTms();
 
-  const tourDeliveries = deliveries.filter(
-    (d) => d.tourId === currentTour.id && d.sequence <= currentTour.deliveriesCount
-  );
+  const tourDeliveries = deliveries.filter((d) => d.tourId === currentTour.id);
   const total = tourDeliveries.length || currentTour.deliveriesCount;
   const completed = tourDeliveries.filter((d) => d.status === 'Validée' || d.status === 'À valider').length;
   const failed = tourDeliveries.filter((d) => d.status === 'Échec' || d.status === 'Rejetée').length;
+  const processed = completed + failed;
   const remaining = Math.max(total - completed - failed, 0);
-  const progressPercent = total ? Math.round((completed / total) * 100) : 0;
+  const progressPercent = total ? Math.round((processed / total) * 100) : 0;
 
   const currentStop =
     tourDeliveries.find((d) => d.status === 'Livraison en cours' || d.status === 'Arrivé' || d.status === 'En route') ||
@@ -35,7 +34,7 @@ export const HomeScreen: React.FC = () => {
         <div className="absolute -right-10 -top-10 h-28 w-28 rounded-full bg-white/10" />
         <div className="relative flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold text-[#D6E9FA]">Mercredi 16 Septembre 2026</p>
+            <p className="text-xs font-semibold text-[#D6E9FA]">Mardi 15 Septembre 2026</p>
             <h1 className="mt-1 text-xl font-bold">Bonjour {currentDriver.name}</h1>
             <p className="mt-1 text-xs text-[#D6E9FA]">{currentTour.zone}</p>
           </div>
@@ -48,7 +47,7 @@ export const HomeScreen: React.FC = () => {
         <div className="relative mt-5 rounded-2xl bg-white/12 p-3 ring-1 ring-white/15">
           <div className="flex items-center justify-between text-xs">
             <span className="font-semibold text-[#D6E9FA]">Progression globale</span>
-            <span className="font-mono font-bold text-white">{completed}/{total} livrées</span>
+            <span className="font-mono font-bold text-white">{processed}/{total} traitées</span>
           </div>
           <MobileProgressBar value={progressPercent} className="mt-2 bg-white/20" />
           <div className="mt-3 flex items-center justify-between text-xs text-[#D6E9FA]">
@@ -59,9 +58,10 @@ export const HomeScreen: React.FC = () => {
       </div>
 
       <div className="p-4 space-y-4">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-4 gap-2">
           <MetricTile label="Total" value={total} tone="neutral" />
           <MetricTile label="Livrées" value={completed} tone="success" />
+          <MetricTile label="Échecs" value={failed} tone="danger" />
           <MetricTile label="Restantes" value={remaining} tone="warning" />
         </div>
 

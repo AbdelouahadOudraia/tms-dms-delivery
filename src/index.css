@@ -3,24 +3,31 @@
 @layer base {
   :root {
     --color-primary: #0057A8;
-    --color-primary-hover: #004280;
-    --color-secondary: #1976D2;
+    --color-primary-hover: #003B73;
+    --color-primary-soft: #EFF6FF;
     --color-accent: #D71920;
     --color-highlight: #FFD200;
     --color-success: #2E9E5B;
     --color-warning: #E8722C;
     --color-danger: #7F1D1D;
-    --color-ink: #1D2229;
-    --color-muted: #5B6470;
-    --color-border: #DDE7F0;
+    --color-ink: #1F2937;
+    --color-muted: #64748B;
+    --color-border: #E2E8F0;
     --color-surface: #FFFFFF;
-    --color-canvas: #F3F7FB;
-    --radius-ui: 10px;
-    --shadow-ui: 0 1px 2px rgb(15 23 42 / 0.06);
+    --color-surface-subtle: #F8FAFC;
+    --color-canvas: #F5F7FA;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-6: 24px;
+    --space-8: 32px;
   }
 
   body {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: var(--color-canvas);
     color: var(--color-ink);
   }
@@ -36,9 +43,93 @@
   input:focus-visible,
   select:focus-visible,
   textarea:focus-visible {
-    outline: 2px solid var(--color-secondary);
+    outline: 2px solid var(--color-primary);
     outline-offset: 2px;
   }
+}
+
+@layer components {
+  .bo-page {
+    @apply flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#F5F7FA] p-6;
+  }
+
+  .bo-panel {
+    @apply border border-[#E2E8F0] bg-white;
+    border-radius: var(--radius-md);
+  }
+
+  .bo-input {
+    @apply h-9 border border-[#CBD5E1] bg-white px-3 text-sm text-[#1F2937] outline-none transition-colors placeholder:text-[#94A3B8] focus:border-[#0057A8];
+    border-radius: var(--radius-sm);
+  }
+
+  .bo-button-primary {
+    @apply inline-flex h-9 items-center justify-center gap-2 bg-[#0057A8] px-4 text-sm font-medium text-white transition-colors hover:bg-[#003B73] disabled:cursor-not-allowed disabled:opacity-50;
+    border-radius: var(--radius-sm);
+  }
+
+  .bo-button-secondary {
+    @apply inline-flex h-9 items-center justify-center gap-2 border border-[#CBD5E1] bg-white px-4 text-sm font-medium text-[#334155] transition-colors hover:bg-[#F8FAFC];
+    border-radius: var(--radius-sm);
+  }
+
+  .bo-table {
+    @apply w-full text-left text-sm;
+  }
+
+  .bo-table thead {
+    @apply sticky top-0 z-10 border-b border-[#E2E8F0] bg-[#F8FAFC] text-[13px] font-medium text-[#475569];
+  }
+
+  .bo-table th {
+    @apply h-11 px-4 font-medium;
+  }
+
+  .bo-table td {
+    @apply h-14 px-4 text-[#334155];
+  }
+
+  .bo-table tbody tr {
+    @apply border-b border-[#E2E8F0] transition-colors last:border-0 hover:bg-[#F8FAFC];
+  }
+}
+
+/* Backoffice guardrails: keep legacy screens aligned while they migrate to shared components. */
+.backoffice-shell h1 {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.backoffice-shell table {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.backoffice-shell thead th {
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.backoffice-shell .text-\[10px\],
+.backoffice-shell .text-\[11px\] {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.backoffice-shell .rounded-xl,
+.backoffice-shell .rounded-2xl,
+.backoffice-shell .rounded-3xl {
+  border-radius: var(--radius-md);
+}
+
+.backoffice-shell .shadow-xs,
+.backoffice-shell .shadow-sm,
+.backoffice-shell .shadow-md {
+  box-shadow: none;
 }
 
 .material-symbols-outlined {

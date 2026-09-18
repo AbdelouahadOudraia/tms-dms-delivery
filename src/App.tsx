@@ -23,39 +23,36 @@ const MainApp: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#EEF3F8] font-sans">
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#F5F7FA] font-sans text-[#1F2937]">
       {/* Top Application Bar: Platform Switcher & Scenario Guide */}
-      <header className="h-12 bg-gradient-to-r from-[#003B73] via-[#0057A8] to-[#073B73] border-b border-[#00315F] px-4 flex items-center justify-between shrink-0 z-50 text-white select-none shadow-md shadow-slate-900/20 backdrop-blur">
+      <header className="z-50 flex h-14 shrink-0 select-none items-center justify-between border-b border-[#E2E8F0] bg-white px-5">
         {/* Left: Product title & tag */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <div className="relative w-8 h-8 rounded-xl bg-white text-[#0057A8] flex items-center justify-center shadow-sm">
-              <span className="material-symbols-outlined text-[19px]">route</span>
-              <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-[#FFD200] ring-2 ring-white" />
+            <div className="relative flex h-8 w-8 items-center justify-center rounded-md bg-[#0057A8] text-white">
+              <span className="material-symbols-outlined text-[17px]">route</span>
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[#FFD200] ring-2 ring-white" />
             </div>
             <div>
-              <span className="font-bold text-sm tracking-tight text-white block leading-tight">
+              <span className="block text-sm font-semibold leading-tight text-[#1F2937]">
                 TMS / DMS Delivery
               </span>
             </div>
           </div>
-          <span className="hidden lg:inline-flex items-center gap-1.5 text-[11px] text-[#D6E9FA] bg-white/10 px-3 py-1 rounded-full border border-white/15 font-bold">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#8FBCE6]" />
+          <span className="hidden items-center gap-1.5 rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-1 text-xs font-medium text-[#0057A8] lg:inline-flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#0057A8]" />
             Casablanca Hub
           </span>
         </div>
 
         {/* Center: Unified view mode segmented control */}
-        <div className="flex items-center gap-1 rounded-2xl border border-white/20 bg-[#003B73]/35 p-1 text-xs shadow-inner">
-          <span className="hidden lg:inline px-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-300">
-            Vue
-          </span>
+        <div className="flex items-center gap-0.5 rounded-md border border-[#CBD5E1] bg-[#F8FAFC] p-0.5 text-[13px]">
           <button
             onClick={() => setActiveViewMode('split')}
-            className={`px-3 py-1 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+            className={`flex h-8 items-center gap-1.5 rounded px-3 font-medium transition-colors ${
               activeViewMode === 'split'
-                ? 'bg-white text-[#0057A8] shadow-md'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
+                ? 'bg-white text-[#0057A8] ring-1 ring-[#E2E8F0]'
+                : 'text-[#64748B] hover:bg-white hover:text-[#1F2937]'
             }`}
           >
             <span className="material-symbols-outlined text-[16px]">view_column</span>
@@ -64,10 +61,10 @@ const MainApp: React.FC = () => {
 
           <button
             onClick={() => setActiveViewMode('backoffice')}
-            className={`px-3 py-1 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+            className={`flex h-8 items-center gap-1.5 rounded px-3 font-medium transition-colors ${
               activeViewMode === 'backoffice'
-                ? 'bg-white text-[#0057A8] shadow-md'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
+                ? 'bg-white text-[#0057A8] ring-1 ring-[#E2E8F0]'
+                : 'text-[#64748B] hover:bg-white hover:text-[#1F2937]'
             }`}
           >
             <span className="material-symbols-outlined text-[16px]">desktop_windows</span>
@@ -76,10 +73,10 @@ const MainApp: React.FC = () => {
 
           <button
             onClick={() => setActiveViewMode('driver')}
-            className={`px-3 py-1 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+            className={`flex h-8 items-center gap-1.5 rounded px-3 font-medium transition-colors ${
               activeViewMode === 'driver'
-                ? 'bg-white text-[#0057A8] shadow-md'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
+                ? 'bg-white text-[#0057A8] ring-1 ring-[#E2E8F0]'
+                : 'text-[#64748B] hover:bg-white hover:text-[#1F2937]'
             }`}
           >
             <span className="material-symbols-outlined text-[16px]">smartphone</span>
@@ -92,7 +89,7 @@ const MainApp: React.FC = () => {
           {pendingCount > 0 && (
             <span
               title="Preuves e-POD en attente de validation"
-              className="inline-flex items-center gap-1.5 rounded-xl border border-[#FBD9C3] bg-[#FFF4EA] px-3 py-1 text-xs font-bold text-[#B8561B]"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[#FED7AA] bg-[#FFF7ED] px-2.5 text-xs font-medium text-[#C2410C]"
             >
               <span className="material-symbols-outlined text-[15px]">verified</span>
               <span>{pendingCount} e-POD à valider</span>
@@ -102,7 +99,7 @@ const MainApp: React.FC = () => {
           <button
             onClick={handleStartScenario}
             title="Lancer le parcours étape par étape"
-            className="hidden md:flex items-center gap-1.5 rounded-xl border border-white/20 bg-white/5 px-3 py-1 text-xs font-bold text-slate-100 transition-colors hover:bg-white/10"
+            className="hidden h-8 items-center gap-1.5 rounded-md border border-[#CBD5E1] bg-white px-2.5 text-xs font-medium text-[#475569] transition-colors hover:bg-[#F8FAFC] md:flex"
           >
             <span className="material-symbols-outlined text-[16px] text-[#D71920]">play_circle</span>
             <span>Scénario complet</span>
@@ -111,7 +108,7 @@ const MainApp: React.FC = () => {
           <button
             onClick={resetDemoData}
             title="Réinitialiser les données de démo"
-            className="p-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 hover:text-white border border-white/15 transition-colors"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#CBD5E1] bg-white text-[#64748B] transition-colors hover:bg-[#F8FAFC] hover:text-[#0057A8]"
           >
             <span className="material-symbols-outlined text-[18px]">restart_alt</span>
           </button>
@@ -127,7 +124,7 @@ const MainApp: React.FC = () => {
         )}
 
         {activeViewMode === 'driver' && (
-          <div className="flex-1 flex h-full overflow-hidden items-center justify-center bg-gradient-to-br from-[#DCEBFA] via-[#EEF3F8] to-[#F7FAFC]">
+          <div className="flex h-full flex-1 items-center justify-center overflow-hidden bg-[#F5F7FA]">
             <DriverApp />
           </div>
         )}
@@ -140,7 +137,7 @@ const MainApp: React.FC = () => {
             </div>
 
             {/* Right Mobile Driver Handset */}
-            <div className="w-[430px] shrink-0 flex flex-col h-full bg-gradient-to-br from-[#DCEBFA] via-[#EEF3F8] to-[#F7FAFC] border-l border-[#DDE7F0] overflow-hidden">
+            <div className="flex h-full w-[430px] shrink-0 flex-col overflow-hidden border-l border-[#E2E8F0] bg-[#F5F7FA]">
               <div className="h-9 bg-white/90 px-4 flex items-center justify-between text-xs text-[#5B6470] shrink-0 border-b border-[#DDE7F0] backdrop-blur">
                 <span className="font-bold flex items-center gap-1.5 text-[#1D2229]">
                   <span className="material-symbols-outlined text-[16px] text-[#0057A8]">phone_android</span>

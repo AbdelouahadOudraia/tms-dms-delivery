@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { useTms } from '../../context/TmsContext';
 import { StatusBadge } from '../common/StatusBadge';
-import { Tour } from '../../types';
+import { Delivery, DeliveryStatus, Tour } from '../../types';
+import { GoogleMapCard, GoogleMapMarker, GoogleMapRoutePoint } from '../maps/GoogleMapCard';
+import { PageHeader, SectionHeader } from '../common/BackofficeUI';
 
 type CreateTourForm = {
   date: string;
@@ -20,17 +22,95 @@ const ZONE_OPTIONS = [
   'Casablanca Sud (Californie, Bouskoura)',
 ];
 
+const getStopMarkerKind = (status: DeliveryStatus): GoogleMapMarker['kind'] => {
+  if (status === 'Validée' || status === 'À valider') return 'success';
+  if (['Livraison en cours', 'En route', 'Arrivé'].includes(status)) return 'stop';
+  if (status === 'Échec' || status === 'Rejetée' || status === 'Retournée') return 'failed';
+  return 'pending';
+};
+
+const buildTourMapOverlay = (tourDeliveries: Delivery[]) => {
+  if (tourDeliveries.length === 0) {
+    return {
+      markers: [
+        {
+          id: 'hub',
+          label: 'Dépôt',
+          detail: 'Casablanca Hub Ouest',
+          kind: 'hub' as const,
+          x: 28,
+          y: 66,
+        },
+      ],
+      routePath: [],
+    };
+  }
+
+  const padding = 16;
+  const coordinates = tourDeliveries.map((delivery) => delivery.coordinates);
+  const latitudes = coordinates.map((coordinate) => coordinate.lat);
+  const longitudes = coordinates.map((coordinate) => coordinate.lng);
+  const minLat = Math.min(...latitudes);
+  const maxLat = Math.max(...latitudes);
+  const minLng = Math.min(...longitudes);
+  const maxLng = Math.max(...longitudes);
+  const latRange = maxLat - minLat || 0.01;
+  const lngRange = maxLng - minLng || 0.01;
+
+  const stopPoints = tourDeliveries.map((delivery) => ({
+    id: delivery.id,
+    x: padding + ((delivery.coordinates.lng - minLng) / lngRange) * (100 - padding * 2),
+    y: padding + ((maxLat - delivery.coordinates.lat) / latRange) * (100 - padding * 2),
+  }));
+
+  const hubPoint = { id: 'hub', x: 12, y: 82 };
+  const markers: GoogleMapMarker[] = [
+    {
+      ...hubPoint,
+      label: 'Dépôt',
+      detail: 'Casablanca Hub Ouest',
+      kind: 'hub',
+    },
+    ...stopPoints.map((point, index) => {
+      const delivery = tourDeliveries[index];
+
+      return {
+        ...point,
+        label: String(delivery.sequence || index + 1),
+        detail: `${delivery.customerName} · ${delivery.status}`,
+        kind: getStopMarkerKind(delivery.status),
+      };
+    }),
+  ];
+  const routePath: GoogleMapRoutePoint[] = [hubPoint, ...stopPoints].map((point) => ({
+    id: point.id,
+    x: point.x,
+    y: point.y,
+  }));
+
+  return { markers, routePath };
+};
+
 export const ToursScreen: React.FC = () => {
-  const { tours, drivers, vehicles, deliveries, createTour, dispatchTour } = useTms();
+  const {
+    tours,
+    drivers,
+    vehicles,
+    deliveries,
+    createTour,
+    dispatchTour,
+    backofficeTab,
+    setBackofficeTab,
+  } = useTms();
 
   const [selectedTour, setSelectedTour] = useState<Tour>(tours[0]);
-  const [showCreatePage, setShowCreatePage] = useState<boolean>(false);
+  const [showCreatePage, setShowCreatePage] = useState<boolean>(backofficeTab === 'tour-create');
   const [showDispatchModal, setShowDispatchModal] = useState<boolean>(false);
   const [selectedDriverId, setSelectedDriverId] = useState<string>(drivers[0].id);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>(vehicles[0].id);
   const [dispatchSuccessToast, setDispatchSuccessToast] = useState<string | null>(null);
   const [form, setForm] = useState<CreateTourForm>({
-    date: '17 Septembre 2026',
+    date: '15 Septembre 2026',
     zone: ZONE_OPTIONS[0],
     departureTime: '09:00',
     estimatedEndTime: '17:30',
@@ -41,18 +121,30 @@ export const ToursScreen: React.FC = () => {
 
   const selectedTourSafe = tours.find((tour) => tour.id === selectedTour.id) || tours[0];
   const tourDeliveries = deliveries.filter((delivery) => delivery.tourId === selectedTourSafe.id);
+  const selectedTourMapOverlay = useMemo(
+    () => buildTourMapOverlay(tourDeliveries),
+    [tourDeliveries]
+  );
 
   const candidateDeliveries = useMemo(() => {
-    const planned = deliveries.filter(
-      (delivery) => delivery.status === 'À planifier' || delivery.status === 'Planifiée'
+    const zoneDistricts = form.zone
+      .match(/\(([^)]+)\)/)?.[1]
+      .split(',')
+      .map((district) => district.trim().toLowerCase()) || [];
+
+    return deliveries.filter(
+      (delivery) =>
+        delivery.status === 'À planifier' &&
+        !delivery.tourId &&
+        delivery.deliveryDate === form.date &&
+        zoneDistricts.includes(delivery.district.toLowerCase())
     );
+  }, [deliveries, form.date, form.zone]);
 
-    if (planned.length > 0) return planned.slice(0, 8);
-
-    return deliveries
-      .filter((delivery) => delivery.status === 'Affectée')
-      .slice(0, 8);
-  }, [deliveries]);
+  const closeCreatePage = () => {
+    setShowCreatePage(false);
+    setBackofficeTab('tours');
+  };
 
   const toggleDelivery = (deliveryId: string) => {
     setForm((prev) => ({
@@ -72,6 +164,7 @@ export const ToursScreen: React.FC = () => {
     setSelectedDriverId(newTour.driverId);
     setSelectedVehicleId(newTour.vehicleId);
     setShowCreatePage(false);
+    setBackofficeTab('tours');
     setDispatchSuccessToast(`Tournée ${newTour.id} créée avec ${form.deliveryIds.length} livraison(s).`);
     setTimeout(() => setDispatchSuccessToast(null), 3500);
     setForm((prev) => ({ ...prev, deliveryIds: [] }));
@@ -96,7 +189,7 @@ export const ToursScreen: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <button
-              onClick={() => setShowCreatePage(false)}
+              onClick={closeCreatePage}
               className="mb-2 inline-flex items-center gap-1 text-xs font-bold text-[#0057A8] hover:underline"
             >
               <span className="material-symbols-outlined text-[16px]">arrow_back</span>
@@ -136,7 +229,7 @@ export const ToursScreen: React.FC = () => {
                   <span className="text-xs font-bold text-[#1e293b]">Zone de livraison</span>
                   <select
                     value={form.zone}
-                    onChange={(e) => setForm((prev) => ({ ...prev, zone: e.target.value }))}
+                    onChange={(e) => setForm((prev) => ({ ...prev, zone: e.target.value, deliveryIds: [] }))}
                     className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-xs font-semibold text-[#1e293b] bg-white focus:border-[#0057A8] focus:outline-none"
                   >
                     {ZONE_OPTIONS.map((zone) => (
@@ -215,6 +308,13 @@ export const ToursScreen: React.FC = () => {
               </div>
 
               <div className="flex-1 overflow-y-auto scrollbar-soft divide-y divide-[#f1f5f9]">
+                {candidateDeliveries.length === 0 && (
+                  <div className="flex min-h-40 flex-col items-center justify-center px-6 text-center">
+                    <span className="material-symbols-outlined text-[28px] text-[#94A3B8]">inventory_2</span>
+                    <p className="mt-2 text-sm font-semibold text-[#334155]">Aucun BL confirmé disponible pour cette date et cette zone</p>
+                    <p className="mt-1 text-xs text-[#64748B]">Confirmez d’abord les BL dans « Ordres de livraison » ou vérifiez la date et la zone.</p>
+                  </div>
+                )}
                 {candidateDeliveries.map((delivery) => {
                   const selected = form.deliveryIds.includes(delivery.id);
                   return (
@@ -231,7 +331,7 @@ export const ToursScreen: React.FC = () => {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <span className="font-mono text-xs font-bold text-[#0057A8]">{delivery.orderId}</span>
+                            <span className="font-mono text-xs font-bold text-[#0057A8]">{delivery.orderId.replace(/^CMD-/, 'BL-')}</span>
                             <h3 className="text-sm font-bold text-[#1e293b]">{delivery.customerName}</h3>
                           </div>
                           <StatusBadge status={delivery.status} size="sm" />
@@ -294,7 +394,7 @@ export const ToursScreen: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={() => setShowCreatePage(false)}
+                onClick={closeCreatePage}
                 className="w-full px-4 py-2 rounded-xl border border-[#cbd5e1] text-xs font-semibold text-[#475569] hover:bg-slate-50"
               >
                 Annuler
@@ -307,36 +407,20 @@ export const ToursScreen: React.FC = () => {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#f8fafc] overflow-hidden p-6 space-y-6">
+    <div className="bo-page">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-[#1e293b]">Gestion des tournées</h1>
-          <p className="text-xs text-[#64748b] mt-0.5">
-            Création, affectation, suivi des séquences et transmission vers l'application chauffeur.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
+      <PageHeader title="Gestion des tournées" subtitle="Création, affectation, suivi des séquences et transmission vers l’application chauffeur" actions={
           <button
             onClick={() => setShowCreatePage(true)}
-            className="px-4 py-2 rounded-xl border border-[#BCD6ED] bg-white hover:bg-[#E8F2FB] text-[#0057A8] text-xs font-bold flex items-center gap-1.5 shadow-sm"
+            className="bo-button-primary"
           >
-            <span className="material-symbols-outlined text-[16px]">add</span>
+            <span className="material-symbols-outlined text-[18px]">add</span>
             <span>Créer une tournée</span>
           </button>
-          <button
-            onClick={() => setShowDispatchModal(true)}
-            className="px-4 py-2 rounded-xl bg-[#0057A8] hover:bg-[#004280] text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-950/20"
-          >
-            <span className="material-symbols-outlined text-[16px]">send</span>
-            <span>Affecter & Envoyer au chauffeur</span>
-          </button>
-        </div>
-      </div>
+      } />
 
       {dispatchSuccessToast && (
-        <div className="p-3 bg-emerald-600 text-white rounded-xl shadow-md flex items-center justify-between text-xs font-semibold animate-in fade-in">
+        <div className="mb-4 flex h-10 shrink-0 items-center justify-between rounded-md bg-[#F0FDF4] px-3 text-[13px] font-medium text-[#166534]">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-[20px]">check_circle</span>
             <span>{dispatchSuccessToast}</span>
@@ -348,14 +432,10 @@ export const ToursScreen: React.FC = () => {
       )}
 
       {/* Split View: Left List of Tours + Right Tour Details & Stops */}
-      <div className="flex-1 flex flex-col lg:flex-row gap-6 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden lg:flex-row">
         {/* Left: Tours List */}
-        <div className="w-full lg:w-96 bg-white rounded-2xl border border-[#e2e8f0] shadow-xs flex flex-col overflow-hidden">
-          <div className="p-4 border-b border-[#e2e8f0] bg-slate-50/50 flex items-center justify-between">
-            <span className="text-xs font-bold text-[#475569] uppercase tracking-wider">
-              Tournées du jour ({tours.length})
-            </span>
-          </div>
+        <div className="bo-panel flex w-full flex-col overflow-hidden lg:w-[300px]">
+          <SectionHeader title="Tournées du jour" subtitle={`${tours.length} tournée(s)`} />
 
           <div className="flex-1 overflow-y-auto scrollbar-soft divide-y divide-[#f1f5f9]">
             {tours.map((t) => {
@@ -366,28 +446,28 @@ export const ToursScreen: React.FC = () => {
                 <div
                   key={t.id}
                   onClick={() => setSelectedTour(t)}
-                  className={`p-4 cursor-pointer transition-colors space-y-2 ${
+                  className={`cursor-pointer space-y-2 border-l-2 px-4 py-3 transition-colors ${
                     isSelected
-                      ? 'bg-blue-50/40 border-l-4 border-l-[#0057A8]'
-                      : 'hover:bg-slate-50 border-l-4 border-l-transparent'
+                      ? 'border-l-[#0057A8] bg-[#EFF6FF]'
+                      : 'border-l-transparent hover:bg-[#F8FAFC]'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold text-[#0057A8]">
+                    <span className="font-mono text-sm font-medium text-[#0057A8]">
                       {t.id}
                     </span>
                     <StatusBadge status={t.status} size="sm" />
                   </div>
 
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-[#1e293b]">{t.driverName}</span>
+                    <span className="font-medium text-[#1F2937]">{t.driverName}</span>
                     <span className="font-mono text-[#64748b]">{t.vehicleId}</span>
                   </div>
 
-                  <div className="flex items-center justify-between text-[11px] text-[#64748b]">
+                  <div className="flex items-center justify-between text-xs text-[#64748B]">
                     <span className="truncate pr-2">{t.zone}</span>
                     <span className="font-mono font-semibold shrink-0">
-                      {t.completedCount} / {t.deliveriesCount} stops ({percent}%)
+                      {t.completedCount} / {t.deliveriesCount} arrêts
                     </span>
                   </div>
 
@@ -404,16 +484,16 @@ export const ToursScreen: React.FC = () => {
         </div>
 
         {/* Right: Selected Tour Detailed View */}
-        <div className="flex-1 bg-white rounded-2xl border border-[#e2e8f0] shadow-xs flex flex-col overflow-hidden">
-          <div className="p-4 border-b border-[#e2e8f0] bg-slate-50/60 flex flex-wrap items-center justify-between gap-3">
+        <div className="bo-panel flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] px-4 py-3">
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-[#1e293b]">
-                  Détail Tournée {selectedTourSafe.id}
+                <h2 className="text-base font-semibold text-[#1F2937]">
+                  Détail tournée {selectedTourSafe.id}
                 </h2>
                 <StatusBadge status={selectedTourSafe.status} size="md" />
               </div>
-              <p className="text-xs text-[#64748b] mt-0.5">
+              <p className="mt-0.5 text-[13px] text-[#64748B]">
                 Zone : {selectedTourSafe.zone} • {tourDeliveries.length} livraisons programmées
               </p>
             </div>
@@ -421,7 +501,7 @@ export const ToursScreen: React.FC = () => {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setShowDispatchModal(true)}
-                className="px-3.5 py-1.5 rounded-lg border border-[#cbd5e1] hover:bg-white text-xs font-bold text-[#0057A8] flex items-center gap-1.5"
+                className="bo-button-secondary"
               >
                 <span className="material-symbols-outlined text-[16px]">edit</span>
                 <span>Réaffecter</span>
@@ -429,7 +509,7 @@ export const ToursScreen: React.FC = () => {
 
               <button
                 onClick={() => setShowDispatchModal(true)}
-                className="px-4 py-1.5 rounded-lg bg-[#0057A8] hover:bg-[#004280] text-white text-xs font-bold flex items-center gap-1.5 shadow-xs"
+                className="bo-button-primary"
               >
                 <span className="material-symbols-outlined text-[16px]">send</span>
                 <span>Envoyer au chauffeur</span>
@@ -437,36 +517,36 @@ export const ToursScreen: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-2 p-4 border-b border-[#e2e8f0] bg-white text-xs text-center">
-            <div className="p-2 bg-slate-50 rounded-lg">
-              <span className="text-[10px] text-[#64748b] block">Chauffeur</span>
-              <strong className="text-[#1e293b]">{selectedTourSafe.driverName}</strong>
+          <dl className="grid grid-cols-4 gap-6 border-b border-[#E2E8F0] px-4 py-3 text-[13px]">
+            <div><dt className="text-[#64748B]">Chauffeur</dt><dd className="mt-1 font-medium text-[#1F2937]">{selectedTourSafe.driverName}</dd>
             </div>
-            <div className="p-2 bg-slate-50 rounded-lg">
-              <span className="text-[10px] text-[#64748b] block">Véhicule</span>
-              <strong className="font-mono text-[#0057A8]">{selectedTourSafe.vehicleId}</strong>
+            <div><dt className="text-[#64748B]">Véhicule</dt><dd className="mt-1 font-mono text-[#0057A8]">{selectedTourSafe.vehicleId}</dd>
             </div>
-            <div className="p-2 bg-slate-50 rounded-lg">
-              <span className="text-[10px] text-[#64748b] block">Départ prévu</span>
-              <strong className="font-mono text-[#1e293b]">{selectedTourSafe.departureTime}</strong>
+            <div><dt className="text-[#64748B]">Départ prévu</dt><dd className="mt-1 font-mono text-[#1F2937]">{selectedTourSafe.departureTime}</dd>
             </div>
-            <div className="p-2 bg-slate-50 rounded-lg">
-              <span className="text-[10px] text-[#64748b] block">Fin estimée</span>
-              <strong className="font-mono text-emerald-800">{selectedTourSafe.estimatedEndTime}</strong>
+            <div><dt className="text-[#64748B]">Fin estimée</dt><dd className="mt-1 font-mono text-[#166534]">{selectedTourSafe.estimatedEndTime}</dd>
             </div>
+          </dl>
+
+          <div className="px-4 pb-4 border-b border-[#e2e8f0]">
+            <GoogleMapCard
+              query={`Casablanca ${selectedTourSafe.zone}`}
+              zoom={13}
+              title="Aperçu cartographique"
+              className="h-40"
+              markers={selectedTourMapOverlay.markers}
+              routePath={selectedTourMapOverlay.routePath}
+              markerSize="sm"
+              showLegend={false}
+              showMarkerLabels
+            />
           </div>
 
           <div className="flex-1 overflow-y-auto scrollbar-soft">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 text-[#64748b] border-b border-[#e2e8f0] sticky top-0">
+            <table className="bo-table min-w-[900px]">
+              <thead>
                 <tr>
-                  <th className="px-4 py-3 font-semibold">Ordre</th>
-                  <th className="px-4 py-3 font-semibold">N° Commande</th>
-                  <th className="px-4 py-3 font-semibold">Client</th>
-                  <th className="px-4 py-3 font-semibold">Adresse</th>
-                  <th className="px-4 py-3 font-semibold">Créneau</th>
-                  <th className="px-4 py-3 font-semibold">Articles</th>
-                  <th className="px-4 py-3 font-semibold">Statut</th>
+                  <th>Ordre</th><th>N° BL</th><th>Client</th><th>Adresse</th><th>Créneau</th><th>Articles</th><th>Statut</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#f1f5f9]">
@@ -479,15 +559,13 @@ export const ToursScreen: React.FC = () => {
                 ) : (
                   tourDeliveries.map((del) => (
                     <tr key={del.id} className="hover:bg-slate-50/80">
-                      <td className="px-4 py-3 font-mono font-bold text-[#0057A8]">#{del.sequence}</td>
-                      <td className="px-4 py-3 font-mono font-bold text-[#1e293b]">{del.orderId}</td>
-                      <td className="px-4 py-3 font-bold text-[#1e293b]">{del.customerName}</td>
-                      <td className="px-4 py-3 text-[#64748b] max-w-[200px] truncate">
+                      <td className="font-mono font-medium text-[#0057A8]">#{del.sequence}</td>
+                      <td className="font-mono font-medium text-[#1F2937]">{del.orderId.replace(/^CMD-/, 'BL-')}</td>
+                      <td className="font-medium text-[#1F2937]">{del.customerName}</td>
+                      <td className="max-w-[200px] truncate text-[#64748B]">
                         {del.address} ({del.district})
                       </td>
-                      <td className="px-4 py-3 font-mono font-semibold">{del.timeSlot}</td>
-                      <td className="px-4 py-3 text-[#475569]">{del.items.map((it) => it.name).join(', ')}</td>
-                      <td className="px-4 py-3"><StatusBadge status={del.status} size="sm" /></td>
+                      <td className="font-mono">{del.timeSlot}</td><td>{del.items.map((it) => it.name).join(', ')}</td><td><StatusBadge status={del.status} size="sm" /></td>
                     </tr>
                   ))
                 )}

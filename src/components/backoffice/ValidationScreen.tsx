@@ -59,8 +59,8 @@ export const ValidationScreen: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#F3F7FB] overflow-hidden">
-      <div className="bg-white border-b border-[#DDE7F0] px-6 py-4 shrink-0">
+    <div className="bo-page !p-0">
+      <div className="shrink-0 px-6 pb-4 pt-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2.5">
@@ -71,7 +71,7 @@ export const ValidationScreen: React.FC = () => {
                 {pendingDeliveries.length} à valider
               </span>
             </div>
-            <p className="text-xs text-[#627286] mt-1">
+            <p className="mt-1 text-sm text-[#64748B]">
               Contrôle des photos, signatures, coordonnées GPS et remarques chauffeur avant validation finale.
             </p>
           </div>
@@ -97,7 +97,7 @@ export const ValidationScreen: React.FC = () => {
                   : 'text-[#627286] hover:text-[#182433]'
               }`}
             >
-              Toutes ({deliveriesWithProof.length})
+              Dossiers e-POD ({deliveriesWithProof.length})
             </button>
           </div>
         </div>
@@ -115,8 +115,8 @@ export const ValidationScreen: React.FC = () => {
         </div>
       )}
 
-      <div className="flex-1 grid grid-cols-[390px_minmax(0,1fr)] gap-5 overflow-hidden p-6">
-        <section className="bg-white border border-[#DDE7F0] rounded-xl shadow-sm overflow-hidden flex flex-col">
+      <div className="grid min-h-0 flex-1 grid-cols-[390px_minmax(0,1fr)] gap-4 overflow-hidden px-6 pb-6">
+        <section className="bo-panel flex flex-col overflow-hidden">
           <div className="px-4 py-3 border-b border-[#DDE7F0] bg-[#F7FAFC] flex items-center justify-between">
             <div>
               <h2 className="text-xs font-bold text-[#182433] uppercase tracking-wide">
@@ -180,7 +180,7 @@ export const ValidationScreen: React.FC = () => {
           </div>
         </section>
 
-        <section className="min-w-0 bg-white border border-[#DDE7F0] rounded-xl shadow-sm overflow-hidden flex flex-col">
+        <section className="bo-panel flex min-w-0 flex-col overflow-hidden">
           {currentDelivery ? (
             <>
               <div className="px-5 py-4 border-b border-[#DDE7F0] bg-[#FBFDFF] flex items-start justify-between gap-4">

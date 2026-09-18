@@ -1,4 +1,5 @@
 export type DeliveryStatus =
+  | 'À confirmer'
   | 'À planifier'
   | 'Planifiée'
   | 'Affectée'
@@ -11,7 +12,49 @@ export type DeliveryStatus =
   | 'Rejetée'
   | 'Retournée';
 
-export type TourStatus = 'Planifiée' | 'Affectée' | 'En cours' | 'Terminée';
+export type TourStatus = 'Brouillon' | 'Planifiée' | 'Affectée' | 'En cours' | 'À clôturer' | 'Terminée' | 'Annulée';
+
+export type DeliveryLifecycleStatus =
+  | 'À livrer'
+  | 'Confirmée'
+  | 'En cours'
+  | 'Livrée'
+  | 'Échec de livraison'
+  | 'Non chargée'
+  | 'Annulée';
+
+export type PodStatus = 'À collecter' | 'À valider' | 'Validée' | 'Rejetée';
+
+export type IncidentStatus = 'Nouveau' | 'À traiter' | 'Résolu';
+export type IncidentSeverity = 'Bloquant' | 'Information';
+
+export interface DeliveryAddress {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  zone: string;
+  lat: number;
+  lng: number;
+  geocodingStatus: 'Géocodée' | 'À vérifier' | 'Non localisée';
+}
+
+export interface DeliveryZone {
+  id: string;
+  name: string;
+  region: string;
+  addressesCount: number;
+  activeToursCount: number;
+}
+
+export interface RouteOptimizationResult {
+  deliveryId: string;
+  incidentId: string;
+  reorderedStops: number;
+  newEta: string;
+  remainingDistance: string;
+  message: string;
+}
 
 export interface OrderItem {
   id: string;
@@ -47,6 +90,7 @@ export interface ProofOfDelivery {
 export interface Delivery {
   id: string; // e.g. "CMD-45821"
   orderId: string;
+  deliveryDate?: string;
   customerName: string;
   phone: string;
   address: string;
@@ -56,6 +100,8 @@ export interface Delivery {
   arrivalTime?: string;
   deliveryTime?: string;
   status: DeliveryStatus;
+  deliveryStatus?: DeliveryLifecycleStatus;
+  podStatus?: PodStatus;
   tourId: string; // e.g. "TR-2026-058"
   sequence: number; // 1, 2, 3...
   driverId: string; // e.g. "DRV-001"
@@ -118,7 +164,10 @@ export interface Incident {
   description: string;
   timestamp: string;
   resolved: boolean;
+  status?: IncidentStatus;
+  severity?: IncidentSeverity;
 }
+
 
 // Compatibility types for legacy screens
 export type ScreenType =
