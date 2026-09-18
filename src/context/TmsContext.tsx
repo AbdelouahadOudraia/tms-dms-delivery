@@ -42,6 +42,8 @@ interface TmsContextType {
   setSelectedDeliveryId: (id: string) => void;
   backofficeTab: string;
   setBackofficeTab: (tab: string) => void;
+  planningSelectionIds: string[];
+  setPlanningSelectionIds: (ids: string[]) => void;
   driverScreen: string;
   setDriverScreen: (screen: string) => void;
 
@@ -142,6 +144,7 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     'split'
   );
   const [backofficeTab, setBackofficeTab] = useState<string>('dashboard');
+  const [planningSelectionIds, setPlanningSelectionIds] = useState<string[]>([]);
   const [driverScreen, setDriverScreen] = useState<string>('home'); // login, home, deliveries, detail, arrival, items, pod, success, failed, history, profile
 
   // Backoffice creates a new tour from existing planned deliveries
@@ -632,6 +635,7 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setZones(INITIAL_ZONES as unknown as DeliveryZone[]);
     setLastRouteOptimization(null);
     setSelectedDeliveryId('CMD-45821');
+    setPlanningSelectionIds([]);
   };
 
   return (
@@ -653,6 +657,8 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSelectedDeliveryId,
         backofficeTab,
         setBackofficeTab,
+        planningSelectionIds,
+        setPlanningSelectionIds,
         driverScreen,
         setDriverScreen,
         createTour,

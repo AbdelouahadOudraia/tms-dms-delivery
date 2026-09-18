@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTms } from '../../context/TmsContext';
 import { StatusBadge } from '../common/StatusBadge';
 import { Delivery, DeliveryStatus, Tour } from '../../types';
@@ -21,6 +21,15 @@ const ZONE_OPTIONS = [
   'Casablanca Est (Ain Sebaa, Sidi Moumen)',
   'Casablanca Sud (Californie, Bouskoura)',
 ];
+
+const getZoneOptionForDistrict = (district: string) =>
+  ZONE_OPTIONS.find((zone) =>
+    zone
+      .match(/\(([^)]+)\)/)?.[1]
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .includes(district.toLowerCase())
+  ) || ZONE_OPTIONS[0];
 
 const getStopMarkerKind = (status: DeliveryStatus): GoogleMapMarker['kind'] => {
   if (status === 'Validée' || status === 'À valider') return 'success';
@@ -101,6 +110,8 @@ export const ToursScreen: React.FC = () => {
     dispatchTour,
     backofficeTab,
     setBackofficeTab,
+    planningSelectionIds,
+    setPlanningSelectionIds,
   } = useTms();
 
   const [selectedTour, setSelectedTour] = useState<Tour>(tours[0]);
@@ -141,9 +152,46 @@ export const ToursScreen: React.FC = () => {
     );
   }, [deliveries, form.date, form.zone]);
 
+  useEffect(() => {
+    if (backofficeTab === 'tour-create') setShowCreatePage(true);
+  }, [backofficeTab]);
+
+  useEffect(() => {
+    if (!showCreatePage || planningSelectionIds.length === 0) return;
+
+    const selectedDeliveries = deliveries.filter((delivery) =>
+      planningSelectionIds.includes(delivery.id)
+    );
+    const firstDelivery = selectedDeliveries[0];
+    if (!firstDelivery) return;
+
+    const nextZone = getZoneOptionForDistrict(firstDelivery.district);
+    const zoneDistricts = nextZone
+      .match(/\(([^)]+)\)/)?.[1]
+      .split(',')
+      .map((district) => district.trim().toLowerCase()) || [];
+    const eligibleIds = selectedDeliveries
+      .filter(
+        (delivery) =>
+          delivery.status === 'À planifier' &&
+          !delivery.tourId &&
+          delivery.deliveryDate === (firstDelivery.deliveryDate || '15 Septembre 2026') &&
+          zoneDistricts.includes(delivery.district.toLowerCase())
+      )
+      .map((delivery) => delivery.id);
+
+    setForm((prev) => ({
+      ...prev,
+      date: firstDelivery.deliveryDate || prev.date,
+      zone: nextZone,
+      deliveryIds: eligibleIds,
+    }));
+  }, [deliveries, planningSelectionIds, showCreatePage]);
+
   const closeCreatePage = () => {
     setShowCreatePage(false);
     setBackofficeTab('tours');
+    setPlanningSelectionIds([]);
   };
 
   const toggleDelivery = (deliveryId: string) => {
@@ -165,6 +213,7 @@ export const ToursScreen: React.FC = () => {
     setSelectedVehicleId(newTour.vehicleId);
     setShowCreatePage(false);
     setBackofficeTab('tours');
+    setPlanningSelectionIds([]);
     setDispatchSuccessToast(`Tournée ${newTour.id} créée avec ${form.deliveryIds.length} livraison(s).`);
     setTimeout(() => setDispatchSuccessToast(null), 3500);
     setForm((prev) => ({ ...prev, deliveryIds: [] }));
