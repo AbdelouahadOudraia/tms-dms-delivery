@@ -1,14 +1,15 @@
 import React from 'react';
+import { getNextStop } from '../../../utils/workflow';
 import { useTms } from '../../../context/TmsContext';
 import { StatusBadge } from '../../common/StatusBadge';
 import { MobilePrimaryButton, MobileSecondaryButton } from '../MobileUI';
 
 export const SuccessScreen: React.FC = () => {
   const { deliveries, selectedDeliveryId, setDriverScreen, setSelectedDeliveryId, setActiveViewMode, setBackofficeTab } = useTms();
-  const delivery = deliveries.find((d) => d.id === selectedDeliveryId) || deliveries[1];
+  const delivery = deliveries.find((d) => d.id === selectedDeliveryId)!;
 
   const handleNextDelivery = () => {
-    const next = deliveries.find((d) => d.tourId === delivery.tourId && d.sequence === delivery.sequence + 1);
+    const next = getNextStop(deliveries, delivery);
     if (next) {
       setSelectedDeliveryId(next.id);
       setDriverScreen('detail');

@@ -1,21 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTms } from '../../../context/TmsContext';
 import { MobilePrimaryButton, MobileScreenHeader } from '../MobileUI';
+import { PodRejectionNotice } from '../PodRejectionNotice';
 
 export const PODScreen: React.FC = () => {
-  const { deliveries, selectedDeliveryId, confirmDeliveryPOD, setDriverScreen } = useTms();
-  const delivery = deliveries.find((d) => d.id === selectedDeliveryId) || deliveries[1];
+  const {
+    deliveries,
+    selectedDeliveryId,
+    confirmDeliveryPOD,
+    workflowSettings,
+    setDriverScreen,
+  } = useTms();
+  const delivery = deliveries.find((d) => d.id === selectedDeliveryId)!;
 
   const [photoUrl, setPhotoUrl] = useState<string>(
-    delivery.proof?.photoUrl || 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=800&q=80'
+    delivery.status === 'Rejetée' ? delivery.proof?.photoUrl || '' : ''
   );
-  const [recipientName, setRecipientName] = useState<string>(delivery.proof?.recipientName || delivery.customerName);
+  const [recipientName, setRecipientName] = useState<string>(
+    delivery.status === 'Rejetée' ? delivery.proof?.recipientName || '' : ''
+  );
   const [driverNotes, setDriverNotes] = useState<string>(
-    delivery.proof?.driverNotes || 'Remis en main propre, colis vérifiés et état extérieur conforme.'
+    delivery.status === 'Rejetée' ? delivery.proof?.driverNotes || '' : ''
   );
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [customPhotoInput, setCustomPhotoInput] = useState('');
-  const [hasDrawnSignature, setHasDrawnSignature] = useState(true);
+  const [hasDrawnSignature, setHasDrawnSignature] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isDrawingRef = useRef(false);
@@ -30,22 +39,12 @@ export const PODScreen: React.FC = () => {
     ctx.lineWidth = 2.5;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.moveTo(35, 80);
-    ctx.bezierCurveTo(75, 35, 105, 95, 135, 55);
-    ctx.bezierCurveTo(155, 30, 170, 80, 200, 62);
-    ctx.bezierCurveTo(220, 50, 245, 86, 285, 52);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(45, 105);
-    ctx.lineTo(285, 98);
-    ctx.stroke();
-  }, []);
+    setHasDrawnSignature(false);
+  }, [delivery.id]);
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     isDrawingRef.current = true;
-    setHasDrawnSignature(true);
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
@@ -53,7 +52,7 @@ export const PODScreen: React.FC = () => {
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
     ctx.beginPath();
-    ctx.moveTo(clientX - rect.left, clientY - rect.top);
+    ctx.moveTo((clientX - rect.left) * canvas.width / rect.width, (clientY - rect.top) * canvas.height / rect.height);
   };
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -65,8 +64,9 @@ export const PODScreen: React.FC = () => {
     const rect = canvas.getBoundingClientRect();
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    ctx.lineTo(clientX - rect.left, clientY - rect.top);
+    ctx.lineTo((clientX - rect.left) * canvas.width / rect.width, (clientY - rect.top) * canvas.height / rect.height);
     ctx.stroke();
+    setHasDrawnSignature(true);
   };
 
   const stopDrawing = () => {
@@ -82,25 +82,53 @@ export const PODScreen: React.FC = () => {
   };
 
   const handleConfirm = () => {
-    confirmDeliveryPOD(delivery.id, {
+    if (!canConfirm) return;
+    const accepted = confirmDeliveryPOD(delivery.id, {
       photoUrl,
-      signatureData: canvasRef.current?.toDataURL('image/png'),
+      signatureData: hasDrawnSignature ? canvasRef.current?.toDataURL('image/png') : undefined,
       recipientName,
       driverNotes,
     });
-    setDriverScreen('success');
+    if (accepted) setDriverScreen('success');
   };
+
+  const handlePhotoFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setPhotoUrl(reader.result);
+        setShowPhotoModal(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const allItemsChecked = delivery.items.length > 0 && delivery.items.every((item) => item.checked);
+  const canConfirm =
+    ['Livraison en cours', 'Rejetée'].includes(delivery.status) &&
+    (!workflowSettings.requirePhoto || Boolean(photoUrl)) &&
+    (!workflowSettings.requireSignature || hasDrawnSignature) &&
+    Boolean(recipientName.trim()) &&
+    allItemsChecked;
 
   return (
     <div className="flex-1 flex flex-col bg-[#EEF3F8] overflow-hidden pb-20">
       <MobileScreenHeader
         title="e-POD"
         subtitle={delivery.orderId}
-        onBack={() => setDriverScreen('items')}
+        onBack={() => setDriverScreen(delivery.status === 'Rejetée' ? 'detail' : 'items')}
         right={<span className="rounded-full border border-[#BCD6ED] bg-[#E8F2FB] px-2 py-1 text-xs font-bold text-[#0057A8]">10:42</span>}
       />
 
       <div className="flex-1 overflow-y-auto scrollbar-soft p-4 space-y-4">
+        {delivery.status === 'Rejetée' && (
+          <PodRejectionNotice
+            reason={delivery.proof?.rejectionReason}
+            comment={delivery.proof?.rejectionComment}
+          />
+        )}
         <section className="rounded-3xl border border-[#DDE7F0] bg-white p-4 shadow-sm shadow-slate-200/70">
           <p className="text-[10px] font-bold uppercase tracking-wider text-[#5B6470]">Récapitulatif avant validation</p>
           <div className="mt-2 flex items-start justify-between gap-3">
@@ -113,11 +141,15 @@ export const PODScreen: React.FC = () => {
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
             <div className="rounded-xl border border-[#DDE7F0] bg-[#F7FAFC] p-2">
               <span className="block text-[10px] text-[#5B6470]">Photo</span>
-              <span className="font-bold text-[#1D2229]">Horodatée</span>
+              <span className={`font-bold ${photoUrl ? 'text-[#176B3A]' : 'text-[#B8561B]'}`}>
+                {photoUrl ? 'Ajoutée' : 'Manquante'}
+              </span>
             </div>
             <div className="rounded-xl border border-[#DDE7F0] bg-[#F7FAFC] p-2">
               <span className="block text-[10px] text-[#5B6470]">Colis contrôlés</span>
-              <span className="font-bold text-[#1D2229]">{delivery.items.length}/{delivery.items.length}</span>
+              <span className="font-bold text-[#1D2229]">
+                {delivery.items.filter((item) => item.checked).length}/{delivery.items.length}
+              </span>
             </div>
           </div>
         </section>
@@ -125,11 +157,24 @@ export const PODScreen: React.FC = () => {
         <section className="rounded-3xl border border-[#DDE7F0] bg-white p-4 shadow-sm shadow-slate-200/70 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#1D2229]">Photo de livraison</h3>
-            <span className="text-[10px] font-bold text-[#0057A8]">Obligatoire</span>
+            <span className="text-[10px] font-bold text-[#0057A8]">
+              {workflowSettings.requirePhoto ? 'Obligatoire' : 'Facultative'}
+            </span>
           </div>
           <div className="relative aspect-video overflow-hidden rounded-2xl border border-[#DDE7F0] bg-[#F7FAFC]">
-            <img src={photoUrl} alt="Preuve livraison" className="h-full w-full object-cover" />
-            <div className="absolute bottom-2 left-2 rounded-lg bg-black/75 px-2 py-1 text-[10px] font-mono text-white">33.5928° N, -7.6681° W • 10:38</div>
+            {photoUrl ? (
+              <img src={photoUrl} alt="Preuve livraison" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-[#8EA0B5]">
+                <span className="material-symbols-outlined text-[38px]">add_a_photo</span>
+                <span className="text-xs font-semibold">Ajoutez une photo prise chez le client</span>
+              </div>
+            )}
+            {photoUrl && (
+              <div className="absolute bottom-2 left-2 rounded-lg bg-black/75 px-2 py-1 text-[10px] font-mono text-white">
+                {delivery.coordinates.lat}, {delivery.coordinates.lng} • GPS simulé
+              </div>
+            )}
           </div>
           <button type="button" onClick={() => setShowPhotoModal(true)} className="min-h-[40px] w-full rounded-xl border border-dashed border-[#8FBCE6] text-xs font-bold text-[#0057A8]">
             Changer / prendre une photo
@@ -157,7 +202,9 @@ export const PODScreen: React.FC = () => {
             />
             <span className="pointer-events-none absolute bottom-2 right-3 text-[10px] text-[#5B6470]">Signer ici</span>
           </div>
-          {!hasDrawnSignature && <p className="text-xs font-semibold text-[#E8722C]">Signature requise avant confirmation.</p>}
+          {!hasDrawnSignature && workflowSettings.requireSignature && (
+            <p className="text-xs font-semibold text-[#E8722C]">Signature requise avant confirmation.</p>
+          )}
         </section>
 
         <section className="rounded-3xl border border-[#DDE7F0] bg-white p-4 shadow-sm shadow-slate-200/70 space-y-3">
@@ -179,7 +226,9 @@ export const PODScreen: React.FC = () => {
       </div>
 
       <div className="shrink-0 border-t border-[#DDE7F0] bg-white p-4">
-        <MobilePrimaryButton onClick={handleConfirm} disabled={!hasDrawnSignature} icon="check_circle">Confirmer la livraison</MobilePrimaryButton>
+        <MobilePrimaryButton onClick={handleConfirm} disabled={!canConfirm} icon="check_circle">
+          {delivery.status === 'Rejetée' ? 'Renvoyer la preuve corrigée' : 'Confirmer la livraison'}
+        </MobilePrimaryButton>
       </div>
 
       {showPhotoModal && (
@@ -189,16 +238,17 @@ export const PODScreen: React.FC = () => {
               <h3 className="text-sm font-bold text-[#1D2229]">Photo e-POD</h3>
               <button onClick={() => setShowPhotoModal(false)} className="text-[#5B6470]">✕</button>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => { setPhotoUrl('https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=800&q=80'); setShowPhotoModal(false); }} className="rounded-xl border border-[#DDE7F0] p-2 text-left text-xs">
-                <img src="https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=200&q=80" alt="Salon" className="mb-1 h-16 w-full rounded-lg object-cover" />
-                Salon & colis
-              </button>
-              <button type="button" onClick={() => { setPhotoUrl('https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=800&q=80'); setShowPhotoModal(false); }} className="rounded-xl border border-[#DDE7F0] p-2 text-left text-xs">
-                <img src="https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=200&q=80" alt="Frigo" className="mb-1 h-16 w-full rounded-lg object-cover" />
-                Électroménager
-              </button>
-            </div>
+            <label className="flex min-h-24 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-[#8FBCE6] bg-[#F7FAFC] text-xs font-bold text-[#0057A8]">
+              <span className="material-symbols-outlined text-[28px]">photo_camera</span>
+              Prendre ou choisir une photo
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handlePhotoFile}
+                className="sr-only"
+              />
+            </label>
             <input value={customPhotoInput} onChange={(e) => setCustomPhotoInput(e.target.value)} placeholder="URL image personnalisée" className="h-10 w-full rounded-xl border border-[#DDE7F0] px-3 text-xs" />
             <button type="button" onClick={() => { if (customPhotoInput.trim()) { setPhotoUrl(customPhotoInput.trim()); setShowPhotoModal(false); } }} className="h-10 w-full rounded-xl bg-[#0057A8] text-xs font-bold text-white">Appliquer</button>
           </div>

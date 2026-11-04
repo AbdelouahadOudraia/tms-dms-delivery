@@ -1,15 +1,20 @@
 import React, { useState } from 'react';
 import { useTms } from '../../../context/TmsContext';
 import { Delivery } from '../../../types';
+import { DriverEmptyState } from '../DriverEmptyState';
 import { DeliveryCompactCard, MobileProgressBar, MobileScreenHeader } from '../MobileUI';
+import { getVisibleDriverTourStops } from '../../../utils/workflow';
 
 export const DeliveriesScreen: React.FC = () => {
   const { currentTour, deliveries, setDriverScreen, setSelectedDeliveryId } = useTms();
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
+  if (!currentTour) return <DriverEmptyState />;
 
   const tourDeliveries = deliveries
     .filter((d) => d.tourId === currentTour.id)
     .sort((a, b) => a.sequence - b.sequence);
+  const visibleStops = getVisibleDriverTourStops(deliveries, currentTour.id);
+  const resumedCount = tourDeliveries.length - visibleStops.length;
 
   const completedCount = tourDeliveries.filter((d) => d.status === 'Validée' || d.status === 'À valider').length;
   const failedCount = tourDeliveries.filter((d) => d.status === 'Échec' || d.status === 'Rejetée').length;
@@ -22,15 +27,15 @@ export const DeliveriesScreen: React.FC = () => {
   };
 
   const activeDelivery =
-    tourDeliveries.find((d) => d.status === 'Livraison en cours' || d.status === 'Arrivé' || d.status === 'En route') ||
-    tourDeliveries.find((d) => d.status === 'Affectée') ||
-    tourDeliveries[0];
+    visibleStops.find((d) => d.status === 'Livraison en cours' || d.status === 'Arrivé' || d.status === 'En route') ||
+    visibleStops.find((d) => d.status === 'Affectée') ||
+    visibleStops[0];
 
   return (
     <div className="flex-1 flex flex-col bg-[#EEF3F8] overflow-hidden pb-20">
       <MobileScreenHeader
         title="Mes livraisons"
-        subtitle={`${currentTour.id} • ${tourDeliveries.length} arrêts`}
+        subtitle={`${currentTour.id} • ${visibleStops.length} arrêts affichés`}
         onBack={() => setDriverScreen('home')}
         right={
           <div className="flex rounded-xl border border-[#DDE7F0] bg-[#F7FAFC] p-0.5">
@@ -55,9 +60,16 @@ export const DeliveriesScreen: React.FC = () => {
         <MobileProgressBar value={progressPercent} className="mt-2" />
       </div>
 
+      {resumedCount > 0 && (
+        <button type="button" onClick={() => setDriverScreen('history')}
+          className="shrink-0 border-b border-[#DDE7F0] bg-[#EFF6FF] px-4 py-2 text-left text-xs text-[#0057A8]">
+          {resumedCount === 1 ? '1 ancienne tentative reprise' : `${resumedCount} anciennes tentatives reprises`} · Voir dans Historique
+        </button>
+      )}
+
       {viewMode === 'list' ? (
         <div className="flex-1 overflow-y-auto scrollbar-soft p-3 space-y-2.5">
-          {tourDeliveries.map((delivery) => {
+          {visibleStops.map((delivery) => {
             const active = delivery.status === 'Livraison en cours' || delivery.status === 'Arrivé' || delivery.status === 'En route';
             return (
               <DeliveryCompactCard
@@ -81,7 +93,7 @@ export const DeliveriesScreen: React.FC = () => {
             <line x1="120" y1="110" x2="120" y2="500" stroke="#C7D9E8" strokeWidth="2.5" />
             <line x1="250" y1="110" x2="250" y2="500" stroke="#C7D9E8" strokeWidth="3" />
             <path d="M 90 280 L 160 210 L 220 330 L 280 260 L 320 380" stroke="#0057A8" strokeWidth="3" strokeDasharray="6 4" fill="none" />
-            {tourDeliveries.slice(0, 5).map((delivery, i) => {
+            {visibleStops.slice(0, 5).map((delivery, i) => {
               const positions = [{ x: 90, y: 280 }, { x: 160, y: 210 }, { x: 220, y: 330 }, { x: 280, y: 260 }, { x: 320, y: 380 }];
               const pos = positions[i] || { x: 100 + i * 40, y: 200 };
               const active = delivery.id === activeDelivery?.id;

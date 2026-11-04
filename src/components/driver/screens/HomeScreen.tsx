@@ -2,11 +2,13 @@ import React from 'react';
 import { useTms } from '../../../context/TmsContext';
 import { MetricTile, MobilePrimaryButton, MobileProgressBar } from '../MobileUI';
 import { StatusBadge } from '../../common/StatusBadge';
+import { DriverEmptyState } from '../DriverEmptyState';
 
 export const HomeScreen: React.FC = () => {
   const { currentTour, currentDriver, deliveries, setDriverScreen, setSelectedDeliveryId } = useTms();
+  if (!currentTour) return <DriverEmptyState />;
 
-  const tourDeliveries = deliveries.filter((d) => d.tourId === currentTour.id);
+  const tourDeliveries = deliveries.filter((d) => d.tourId === currentTour.id).sort((a, b) => a.sequence - b.sequence);
   const total = tourDeliveries.length || currentTour.deliveriesCount;
   const completed = tourDeliveries.filter((d) => d.status === 'Validée' || d.status === 'À valider').length;
   const failed = tourDeliveries.filter((d) => d.status === 'Échec' || d.status === 'Rejetée').length;
@@ -17,7 +19,7 @@ export const HomeScreen: React.FC = () => {
   const currentStop =
     tourDeliveries.find((d) => d.status === 'Livraison en cours' || d.status === 'Arrivé' || d.status === 'En route') ||
     tourDeliveries.find((d) => d.status === 'Affectée') ||
-    tourDeliveries[0];
+    tourDeliveries.find((d) => d.status === 'Rejetée');
 
   const handleContinueTour = () => {
     if (currentStop) {
@@ -34,7 +36,7 @@ export const HomeScreen: React.FC = () => {
         <div className="absolute -right-10 -top-10 h-28 w-28 rounded-full bg-white/10" />
         <div className="relative flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold text-[#D6E9FA]">Mardi 15 Septembre 2026</p>
+            <p className="text-xs font-semibold text-[#D6E9FA]">{currentTour.date}</p>
             <h1 className="mt-1 text-xl font-bold">Bonjour {currentDriver.name}</h1>
             <p className="mt-1 text-xs text-[#D6E9FA]">{currentTour.zone}</p>
           </div>
@@ -88,7 +90,7 @@ export const HomeScreen: React.FC = () => {
           </div>
         )}
 
-        <MobilePrimaryButton onClick={handleContinueTour} icon="navigation">Démarrer / continuer la tournée</MobilePrimaryButton>
+        <MobilePrimaryButton onClick={currentStop ? handleContinueTour : () => setDriverScreen('completed')} icon="navigation">{currentStop ? 'Démarrer / continuer la tournée' : 'Consulter la clôture'}</MobilePrimaryButton>
 
         <div className="grid grid-cols-2 gap-2">
           <button onClick={() => setDriverScreen('tour-overview')} className="rounded-2xl border border-[#DDE7F0] bg-white p-3 text-left shadow-sm">

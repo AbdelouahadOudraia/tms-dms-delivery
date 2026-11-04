@@ -4,8 +4,9 @@ import { Delivery, DeliveryStatus } from '../../types';
 import { FilterBar, FilterField, PageHeader, SectionHeader } from '../common/BackofficeUI';
 import { StatusBadge } from '../common/StatusBadge';
 import { GoogleMapCard, GoogleMapMarker, GoogleMapRoutePoint } from '../maps/GoogleMapCard';
+import { getWarehouseForDistrict, WAREHOUSES } from '../../data/logisticsReference';
 
-const DEPOT_OPTIONS = ['Tous', 'Casablanca Hub Ouest'];
+const DEPOT_OPTIONS = ['Tous', ...WAREHOUSES.map((warehouse) => warehouse.id)];
 const STATUS_OPTIONS = ['Toutes', 'Planifiée', 'Affectée', 'En cours', 'À clôturer', 'Terminée'];
 
 const getStopSummary = (statuses: string[]) => {
@@ -68,7 +69,7 @@ export const ControlTowerScreen: React.FC = () => {
   const { tours, deliveries, drivers, vehicles } = useTms();
   const [selectedTourId, setSelectedTourId] = useState(tours[0]?.id || '');
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
-  const [dateFilter, setDateFilter] = useState('Aujourd’hui');
+  const [dateFilter, setDateFilter] = useState(tours[0]?.date || '15 Septembre 2026');
   const [depotFilter, setDepotFilter] = useState('Tous');
   const [zoneFilter, setZoneFilter] = useState('Tous');
   const [driverFilter, setDriverFilter] = useState('Tous');
@@ -77,7 +78,7 @@ export const ControlTowerScreen: React.FC = () => {
   const [lastUpdated, setLastUpdated] = useState('10:42');
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
 
-  const dateOptions = useMemo(() => ['Aujourd’hui', ...Array.from(new Set(tours.map((tour) => tour.date)))], [tours]);
+  const dateOptions = useMemo(() => Array.from(new Set(tours.map((tour) => tour.date))), [tours]);
   const zoneOptions = useMemo(() => ['Tous', ...Array.from(new Set(tours.map((tour) => tour.zone)))], [tours]);
   const driverOptions = useMemo(
     () => [
@@ -112,7 +113,7 @@ export const ControlTowerScreen: React.FC = () => {
   };
 
   const handleResetFilters = () => {
-    setDateFilter('Aujourd’hui');
+    setDateFilter(tours[0]?.date || '15 Septembre 2026');
     setDepotFilter('Tous');
     setZoneFilter('Tous');
     setDriverFilter('Tous');
@@ -123,8 +124,14 @@ export const ControlTowerScreen: React.FC = () => {
   const filteredTours = useMemo(
     () =>
       tours.filter((tour) => {
-        const matchesDate = dateFilter === 'Aujourd’hui' || tour.date === dateFilter;
-        const matchesDepot = depotFilter === 'Tous' || depotFilter === 'Casablanca Hub Ouest';
+        const tourDeliveries = deliveries.filter((delivery) => delivery.tourId === tour.id);
+        const tourWarehouseIds = new Set(
+          tourDeliveries
+            .map((delivery) => getWarehouseForDistrict(delivery.district)?.id)
+            .filter(Boolean)
+        );
+        const matchesDate = tour.date === dateFilter;
+        const matchesDepot = depotFilter === 'Tous' || tourWarehouseIds.has(depotFilter);
         const matchesZone = zoneFilter === 'Tous' || tour.zone === zoneFilter;
         const matchesDriver = driverFilter === 'Tous' || tour.driverId === driverFilter;
         const matchesVehicle = vehicleFilter === 'Tous' || tour.vehicleId === vehicleFilter;
@@ -132,7 +139,7 @@ export const ControlTowerScreen: React.FC = () => {
 
         return matchesDate && matchesDepot && matchesZone && matchesDriver && matchesVehicle && matchesStatus;
       }),
-    [dateFilter, depotFilter, driverFilter, statusFilter, tours, vehicleFilter, zoneFilter]
+    [dateFilter, deliveries, depotFilter, driverFilter, statusFilter, tours, vehicleFilter, zoneFilter]
   );
 
   useEffect(() => {
@@ -141,7 +148,8 @@ export const ControlTowerScreen: React.FC = () => {
     }
   }, [filteredTours, selectedTourId]);
 
-  const selectedTour = filteredTours.find((tour) => tour.id === selectedTourId) || tours.find((tour) => tour.id === selectedTourId) || filteredTours[0] || tours[0];
+  const selectedTour =
+    filteredTours.find((tour) => tour.id === selectedTourId) || filteredTours[0];
   const selectedDeliveries = useMemo(
     () => deliveries.filter((delivery) => delivery.tourId === selectedTour?.id).sort((a, b) => a.sequence - b.sequence),
     [deliveries, selectedTour?.id]
@@ -185,7 +193,13 @@ export const ControlTowerScreen: React.FC = () => {
 
         <FilterField label="Dépôt">
           <select value={depotFilter} onChange={(event) => setDepotFilter(event.target.value)} className="bo-input w-full">
-            {DEPOT_OPTIONS.map((value) => <option key={value}>{value}</option>)}
+            {DEPOT_OPTIONS.map((value) => (
+              <option key={value} value={value}>
+                {value === 'Tous'
+                  ? 'Tous les entrepôts'
+                  : WAREHOUSES.find((warehouse) => warehouse.id === value)?.name || value}
+              </option>
+            ))}
           </select>
         </FilterField>
 
@@ -227,7 +241,7 @@ export const ControlTowerScreen: React.FC = () => {
             subtitle={`${filteredTours.length} tournée(s) dans la vue actuelle`}
             action={<div className="flex rounded-md border border-[#CBD5E1] bg-[#F8FAFC] p-0.5 text-[13px]"><button onClick={() => setViewMode('list')} className={`h-8 rounded px-3 font-medium ${viewMode === 'list' ? 'bg-white text-[#0057A8] ring-1 ring-[#E2E8F0]' : 'text-[#64748B]'}`}>Liste</button><button onClick={() => setViewMode('map')} className={`h-8 rounded px-3 font-medium ${viewMode === 'map' ? 'bg-white text-[#0057A8] ring-1 ring-[#E2E8F0]' : 'text-[#64748B]'}`}>Carte</button></div>}
           />
-          {viewMode === 'map' ? (
+          {viewMode === 'map' && selectedTour ? (
             <div className="min-h-0 flex-1 p-4">
               <GoogleMapCard
                 query={`${selectedTour.zone}, Casablanca`}
@@ -241,7 +255,7 @@ export const ControlTowerScreen: React.FC = () => {
                 showLegend={false}
               />
             </div>
-          ) : (
+          ) : viewMode === 'list' ? (
             <div className="scrollbar-soft min-h-0 flex-1 overflow-auto">
               <table className="bo-table min-w-[900px]">
                 <thead><tr><th>Tournée / zone</th><th>Chauffeur</th><th>Véhicule</th><th>Horaires</th><th>Progression</th><th>Arrêts</th><th>Statut</th></tr></thead>
@@ -267,13 +281,23 @@ export const ControlTowerScreen: React.FC = () => {
                   </tr>;
                 })}</tbody>
               </table>
+              {filteredTours.length === 0 && (
+                <div className="flex min-h-52 flex-col items-center justify-center text-center text-sm text-[#64748B]">
+                  <span className="material-symbols-outlined mb-2 text-[34px] text-[#94A3B8]">filter_alt_off</span>
+                  Aucune tournée ne correspond aux filtres sélectionnés.
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex min-h-52 flex-1 items-center justify-center text-sm text-[#64748B]">
+              Aucune tournée à afficher sur la carte.
             </div>
           )}
         </section>
 
         <aside className="bo-panel hidden w-[340px] shrink-0 flex-col overflow-hidden xl:flex">
           <SectionHeader title="Détail tournée" subtitle={selectedTour ? `${selectedTour.id} · ${selectedTour.zone}` : undefined} />
-          {selectedTour && <div className="scrollbar-soft min-h-0 flex-1 overflow-y-auto p-4">
+          {selectedTour ? <div className="scrollbar-soft min-h-0 flex-1 overflow-y-auto p-4">
             <dl className="grid grid-cols-2 gap-x-5 gap-y-3 border-b border-[#E2E8F0] pb-4 text-[13px]">
               <div><dt className="text-[#64748B]">Chauffeur</dt><dd className="mt-0.5 font-medium text-[#1F2937]">{selectedTour.driverName}</dd></div>
               <div><dt className="text-[#64748B]">Véhicule</dt><dd className="mt-0.5 font-mono text-[#1F2937]">{selectedTour.vehicleId}</dd></div>
@@ -294,7 +318,11 @@ export const ControlTowerScreen: React.FC = () => {
             />
             <h3 className="mb-2 text-sm font-semibold text-[#1F2937]">Arrêts</h3>
             <div className="divide-y divide-[#E2E8F0]">{selectedDeliveries.map((delivery) => <div key={delivery.id} className="flex gap-3 py-3 text-[13px]"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#EFF6FF] text-xs font-medium text-[#0057A8]">{delivery.sequence}</span><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><p className="truncate font-medium text-[#1F2937]">{delivery.customerName}</p><StatusBadge status={delivery.status} size="sm" /></div><p className="mt-0.5 text-[#64748B]">{delivery.district} · {delivery.timeSlot}</p></div></div>)}</div>
-          </div>}
+          </div> : (
+            <div className="m-auto px-6 text-center text-sm text-[#64748B]">
+              Sélectionnez des filtres contenant au moins une tournée.
+            </div>
+          )}
         </aside>
       </div>
     </div>

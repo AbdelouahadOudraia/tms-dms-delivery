@@ -1,27 +1,27 @@
 import { Delivery, Incident } from '../types';
 
-export type OperationalIncident = Incident & { sourceStatus?: string };
+export type OperationalIncident = Incident;
 
 export const buildOperationalIncidents = (
   incidents: Incident[],
   deliveries: Delivery[]
 ): OperationalIncident[] => {
-  const byDelivery = new Map<string, OperationalIncident>();
+  const byId = new Map<string, OperationalIncident>();
 
   incidents.forEach((incident) => {
-    byDelivery.set(incident.deliveryId, incident);
+    byId.set(incident.id, { ...incident, sourceStatus: incident.sourceStatus ||
+      (incident.type === 'Preuve rejetée par le backoffice' ? 'Rejetée' : 'Échec') });
   });
 
   deliveries
     .filter((delivery) => delivery.status === 'Échec' || delivery.status === 'Rejetée')
     .forEach((delivery) => {
-      const existing = byDelivery.get(delivery.id);
-      if (existing) {
-        byDelivery.set(delivery.id, { ...existing, sourceStatus: delivery.status });
+      const existing = incidents.filter((incident) => incident.deliveryId === delivery.id);
+      if (existing.length) {
         return;
       }
 
-      byDelivery.set(delivery.id, {
+      byId.set(`INC-${delivery.id}`, {
         id: `INC-${delivery.id}`,
         deliveryId: delivery.id,
         tourId: delivery.tourId,
@@ -34,11 +34,11 @@ export const buildOperationalIncidents = (
           'Anomalie déclarée sur la livraison.',
         timestamp: delivery.deliveryTime || '10:45',
         resolved: false,
-        sourceStatus: delivery.status,
+        sourceStatus: delivery.status === 'Rejetée' ? 'Rejetée' : 'Échec',
       });
     });
 
-  return Array.from(byDelivery.values()).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  return Array.from(byId.values()).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 };
 
 export const countOpenOperationalIncidents = (

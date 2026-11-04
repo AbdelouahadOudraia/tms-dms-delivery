@@ -1,4 +1,5 @@
 import { Delivery, Tour, Driver, Vehicle, Incident } from '../types';
+import { ADDITIONAL_UNASSIGNED_DELIVERIES } from './ordersMockData';
 
 export const INITIAL_DRIVERS: Driver[] = [
   {
@@ -56,6 +57,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     id: '12345-A-6',
     model: 'Renault Master 14m³ Frigo & Hayon',
     capacity: '1 450 kg / 14 m³',
+    type: '3.5T', maxLoadKg: 1450,
     status: 'En service',
     assignedDriverId: 'DRV-001',
   },
@@ -63,6 +65,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     id: '56789-B-6',
     model: 'Iveco Daily 16m³ Hayon élévateur',
     capacity: '1 800 kg / 16 m³',
+    type: 'Camion', maxLoadKg: 1800,
     status: 'En service',
     assignedDriverId: 'DRV-002',
   },
@@ -70,6 +73,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     id: '89012-D-6',
     model: 'Mercedes-Benz Sprinter 12m³',
     capacity: '1 200 kg / 12 m³',
+    type: '3.5T', maxLoadKg: 1200,
     status: 'En service',
     assignedDriverId: 'DRV-003',
   },
@@ -77,6 +81,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     id: '34567-E-6',
     model: 'Peugeot Boxer 11m³',
     capacity: '1 100 kg / 11 m³',
+    type: 'Fourgon', maxLoadKg: 1100,
     status: 'En service',
     assignedDriverId: 'DRV-004',
   },
@@ -84,6 +89,7 @@ export const INITIAL_VEHICLES: Vehicle[] = [
     id: '78901-F-6',
     model: 'Renault Master Grand Volume',
     capacity: '1 600 kg / 20 m³',
+    type: '3.5T', maxLoadKg: 1600,
     status: 'Disponible',
   },
 ];
@@ -719,7 +725,7 @@ export const INITIAL_DELIVERIES: Delivery[] = [
   {
     id: 'CMD-45913',
     orderId: 'CMD-45913',
-    deliveryDate: '15 Septembre 2026',
+    deliveryDate: '16 Septembre 2026',
     customerName: 'Adnane Lahlou',
     phone: '06 74 53 63 73',
     address: 'Bd Mohammed V, Résidence Atlas',
@@ -757,11 +763,17 @@ export const INITIAL_DELIVERIES: Delivery[] = [
     ] as const;
     const [customerName, district, address, timeSlot, itemName, itemRef, category] = customers[idx];
     const orderNumber = 45914 + idx;
+    const deliveryDate =
+      idx <= 5
+        ? '16 Septembre 2026'
+        : idx <= 10
+          ? '17 Septembre 2026'
+          : '18 Septembre 2026';
 
     return {
       id: `CMD-${orderNumber}`,
       orderId: `CMD-${orderNumber}`,
-      deliveryDate: '15 Septembre 2026',
+      deliveryDate,
       customerName,
       phone: `06 ${75 + idx} ${String(20 + idx).padStart(2, '0')} ${String(30 + idx).padStart(2, '0')} ${String(40 + idx).padStart(2, '0')}`,
       address,
@@ -788,6 +800,8 @@ export const INITIAL_DELIVERIES: Delivery[] = [
       ],
     };
   }),
+
+  ...ADDITIONAL_UNASSIGNED_DELIVERIES,
 
   // Livraisons supplémentaires déjà validées
   ...Array.from({ length: 20 }, (_, idx) => {

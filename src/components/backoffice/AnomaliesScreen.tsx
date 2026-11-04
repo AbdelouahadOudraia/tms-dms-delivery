@@ -2,13 +2,15 @@ import React, { useMemo, useState } from 'react';
 import { useTms } from '../../context/TmsContext';
 import { PageHeader, SectionHeader } from '../common/BackofficeUI';
 import { StatusBadge } from '../common/StatusBadge';
-import { buildOperationalIncidents, OperationalIncident } from '../../utils/operationalIncidents';
+import { DeliveryRecoveryForm } from './DeliveryRecoveryForm';
+import type { FailedDeliveryTreatment } from '../../types';
+import { buildOperationalIncidents } from '../../utils/operationalIncidents';
 
 export const AnomaliesScreen: React.FC = () => {
-  const { incidents, deliveries } = useTms();
+  const { incidents, deliveries, resolveIncident, replanifyFailedDelivery, setBackofficeTab } = useTms();
   const [activeTab, setActiveTab] = useState<'tous' | 'echecs' | 'rejetes'>('tous');
-  const [selectedIncident, setSelectedIncident] = useState<OperationalIncident | null>(incidents[0] || null);
-  const [resolutionToast, setResolutionToast] = useState<string | null>(null);
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(incidents[0]?.id || null);
+  const [resolutionToast, setResolutionToast] = useState<{ success: boolean; message: string } | null>(null);
 
   const incidentItems = useMemo(
     () => buildOperationalIncidents(incidents, deliveries),
@@ -21,17 +23,25 @@ export const AnomaliesScreen: React.FC = () => {
     return true;
   });
 
+  const selectedIncident = visibleIncidents.find((incident) => incident.id === selectedIncidentId) || null;
+  const selectedDelivery = selectedIncident
+    ? deliveries.find((delivery) => delivery.id === selectedIncident.deliveryId)
+    : undefined;
+  const nextAttempt = deliveries.find((delivery) => delivery.id === selectedDelivery?.nextAttemptId);
+  const canReplanify = Boolean(selectedDelivery?.status === 'Échec' && !selectedDelivery.nextAttemptId && !selectedIncident?.treatment);
+
   const handleResolveAction = (actionName: string) => {
-    setResolutionToast(`Action enregistrée : ${actionName}`);
-    setTimeout(() => setResolutionToast(null), 3500);
+    if (!selectedIncident || selectedIncident.resolved) return;
+    resolveIncident(selectedIncident.id, actionName);
+    setResolutionToast({ success: true, message: `Action enregistrée : ${actionName}` });
   };
 
-  const actions = [
-    ['event_repeat', 'Reprogrammer', 'Reprogrammer sur prochaine tournée'],
-    ['support_agent', 'Contacter le client', 'Appel Service Client déclenché'],
-    ['assignment_return', 'Retour entrepôt', 'Retour en entrepôt validé'],
-    ['cancel', 'Annuler', 'Commande annulée & remboursement'],
-  ];
+  const handleReplanify = (payload: FailedDeliveryTreatment) => {
+    if (!selectedIncident || !selectedDelivery) return;
+    setResolutionToast(replanifyFailedDelivery(selectedIncident.id, selectedDelivery.id, payload));
+  };
+
+  const actions = [['task_alt', 'Marquer comme résolu', 'Incident traité par l’exploitation']];
 
   return (
     <div className="bo-page">
@@ -43,14 +53,14 @@ export const AnomaliesScreen: React.FC = () => {
         ].map(([id, label]) => <button key={id} onClick={() => setActiveTab(id as typeof activeTab)} className={`h-8 rounded px-3 font-medium ${activeTab === id ? 'bg-white text-[#0057A8] ring-1 ring-[#E2E8F0]' : 'text-[#64748B]'}`}>{label}</button>)}</div>}
       />
 
-      {resolutionToast && <div className="mb-4 flex h-10 shrink-0 items-center justify-between rounded-md bg-[#F0FDF4] px-3 text-[13px] font-medium text-[#166534]"><span className="flex items-center gap-2"><span className="material-symbols-outlined text-[18px]">check_circle</span>{resolutionToast}</span><button onClick={() => setResolutionToast(null)}>×</button></div>}
+      {resolutionToast && <div role={resolutionToast.success ? 'status' : 'alert'} className={`mb-4 flex shrink-0 items-center justify-between gap-3 rounded-md p-3 text-[13px] font-medium ${resolutionToast.success ? 'bg-[#F0FDF4] text-[#166534]' : 'bg-[#FEF2F2] text-[#991B1B]'}`}><span>{resolutionToast.message}</span><button aria-label="Fermer le message" onClick={() => setResolutionToast(null)}>×</button></div>}
 
-      <div className="flex min-h-0 flex-1 gap-4 overflow-hidden">
-        <section className="bo-panel flex w-[40%] min-w-[380px] flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto lg:flex-row lg:overflow-hidden">
+        <section className="bo-panel flex max-h-72 shrink-0 flex-col overflow-hidden lg:max-h-none lg:w-[40%] lg:min-w-[300px]">
           <SectionHeader title="Anomalies terrain" subtitle={`${visibleIncidents.length} élément(s) à afficher`} />
           <div className="scrollbar-soft min-h-0 flex-1 overflow-y-auto divide-y divide-[#E2E8F0]">
             {visibleIncidents.map((incident) => (
-              <button key={incident.id} onClick={() => setSelectedIncident(incident)} className={`w-full border-l-2 px-4 py-3 text-left transition-colors hover:bg-[#F8FAFC] ${selectedIncident?.id === incident.id ? 'border-l-[#0057A8] bg-[#EFF6FF]' : 'border-l-transparent'}`}>
+              <button key={incident.id} onClick={() => setSelectedIncidentId(incident.id)} className={`w-full border-l-2 px-4 py-3 text-left transition-colors hover:bg-[#F8FAFC] ${selectedIncident?.id === incident.id ? 'border-l-[#0057A8] bg-[#EFF6FF]' : 'border-l-transparent'}`}>
                 <div className="flex items-center justify-between gap-3"><span className="truncate text-sm font-medium text-[#1F2937]">{incident.type}</span><span className="shrink-0 font-mono text-xs text-[#64748B]">{incident.timestamp}</span></div>
                 <p className="mt-1 truncate text-[13px] text-[#475569]">{incident.customerName} · {incident.deliveryId}</p>
                 <div className="mt-2 flex items-center justify-between gap-3"><span className="truncate text-xs text-[#64748B]">{incident.driverName}</span><StatusBadge status={incident.resolved ? 'Résolu' : incident.sourceStatus || 'À traiter'} size="sm" /></div>
@@ -59,10 +69,10 @@ export const AnomaliesScreen: React.FC = () => {
           </div>
         </section>
 
-        <section className="bo-panel flex min-w-0 flex-1 flex-col overflow-hidden">
+        <section className="bo-panel flex min-w-0 shrink-0 flex-col lg:min-h-0 lg:flex-1 lg:overflow-hidden">
           <SectionHeader title="Traitement de l’incident" subtitle={selectedIncident?.id} />
           {selectedIncident ? (
-            <div className="scrollbar-soft min-h-0 flex-1 overflow-y-auto p-6">
+            <div className="scrollbar-soft p-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
               <div className="border-b border-[#E2E8F0] pb-5"><div className="flex items-start justify-between gap-4"><div><p className="text-[13px] font-medium text-[#7F1D1D]">Incident {selectedIncident.id}</p><h3 className="mt-1 text-xl font-semibold text-[#1F2937]">{selectedIncident.type}</h3></div><StatusBadge status={selectedIncident.resolved ? 'Résolu' : 'À traiter'} /></div><p className="mt-3 max-w-3xl text-sm leading-6 text-[#475569]">{selectedIncident.description}</p></div>
 
               <dl className="grid grid-cols-2 gap-x-8 gap-y-4 border-b border-[#E2E8F0] py-5 text-sm lg:grid-cols-4">
@@ -72,7 +82,17 @@ export const AnomaliesScreen: React.FC = () => {
                 <div><dt className="text-[13px] text-[#64748B]">Tournée</dt><dd className="mt-1 font-mono text-[#1F2937]">{selectedIncident.tourId}</dd></div>
               </dl>
 
-              <div className="pt-5"><h4 className="mb-3 text-base font-semibold text-[#1F2937]">Actions recommandées</h4><div className="flex flex-wrap gap-2">{actions.map(([icon, label, action]) => <button key={label} onClick={() => handleResolveAction(action)} className={label === 'Annuler' ? 'inline-flex h-9 items-center gap-2 rounded-md border border-[#FECACA] bg-white px-3 text-sm font-medium text-[#7F1D1D] hover:bg-[#FEF2F2]' : 'bo-button-secondary'}><span className="material-symbols-outlined text-[18px]">{icon}</span>{label}</button>)}</div></div>
+              <div className="pt-5">
+                <h4 className="mb-3 text-base font-semibold text-[#1F2937]">Actions recommandées</h4>
+                {canReplanify && selectedDelivery && <DeliveryRecoveryForm key={selectedDelivery.id} delivery={selectedDelivery} onSubmit={handleReplanify} />}
+                {nextAttempt && <div className="mb-4 rounded-md border border-[#BFDBFE] bg-[#EFF6FF] p-3 text-sm">
+                  <p>Nouvelle tentative du {nextAttempt.deliveryDate} · {nextAttempt.timeSlot}</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-3"><StatusBadge status={nextAttempt.status} />
+                    {!nextAttempt.tourId && <button className="bo-button-secondary" onClick={() => setBackofficeTab('orders')}>Ouvrir les ordres de livraison</button>}
+                  </div>
+                </div>}
+                <div className="flex flex-wrap gap-2">{actions.map(([icon, label, action]) => <button key={label} disabled={selectedIncident.resolved} onClick={() => handleResolveAction(action)} className={label === 'Annuler' ? 'inline-flex h-9 items-center gap-2 rounded-md border border-[#FECACA] bg-white px-3 text-sm font-medium text-[#7F1D1D] hover:bg-[#FEF2F2]' : 'bo-button-secondary'}><span className="material-symbols-outlined text-[18px]">{icon}</span>{label}</button>)}</div>
+              </div>
             </div>
           ) : <div className="m-auto text-sm text-[#64748B]">Sélectionnez un incident pour afficher son détail.</div>}
         </section>

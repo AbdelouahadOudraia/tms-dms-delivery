@@ -14,20 +14,22 @@ const FAILURE_REASONS = [
 
 export const FailedDeliveryScreen: React.FC = () => {
   const { deliveries, selectedDeliveryId, failDelivery, setDriverScreen } = useTms();
-  const delivery = deliveries.find((d) => d.id === selectedDeliveryId) || deliveries[1];
+  const delivery = deliveries.find((d) => d.id === selectedDeliveryId)!;
   const [selectedReason, setSelectedReason] = useState('Client absent');
-  const [comment, setComment] = useState('3 tentatives d’appel restées sans réponse. Sonnette muette.');
-  const [photoAdded, setPhotoAdded] = useState(false);
+  const [comment, setComment] = useState('');
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [error, setError] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    failDelivery(
+    const accepted = failDelivery(
       delivery.id,
       selectedReason,
       comment,
-      photoAdded ? 'https://images.unsplash.com/photo-1590247813693-5541d1c609fd?auto=format&fit=crop&w=400&q=80' : undefined
+      photoUrl || undefined
     );
-    setDriverScreen('deliveries');
+    if (accepted) setDriverScreen('deliveries');
+    else setError('Cette livraison ne peut pas être déclarée en échec dans son état actuel.');
   };
 
   return (
@@ -72,16 +74,22 @@ export const FailedDeliveryScreen: React.FC = () => {
             <span className="text-xs font-bold text-[#1D2229]">Photo justificative</span>
             <span className="text-[10px] text-[#5B6470]">Facultatif</span>
           </div>
-          <button
-            type="button"
-            onClick={() => setPhotoAdded((prev) => !prev)}
-            className={`min-h-[44px] w-full rounded-xl border text-xs font-bold ${photoAdded ? 'border-[#BEE3CE] bg-[#EAF5EE] text-[#176B3A]' : 'border-dashed border-[#8EA7BE] bg-white text-[#5B6470]'}`}
-          >
-            {photoAdded ? 'Photo jointe au constat' : 'Ajouter une photo de constat'}
-          </button>
+          <input type="file" accept="image/*" capture="environment" aria-label="Photo justificative" className="w-full text-xs" onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            if (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024) {
+              setError('Choisissez une image de moins de 10 Mo.'); return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => { if (typeof reader.result === 'string') { setPhotoUrl(reader.result); setError(''); } };
+            reader.onerror = () => setError('Impossible de lire cette photo.');
+            reader.readAsDataURL(file);
+          }} />
+          {photoUrl && <img src={photoUrl} alt="Constat de non-livraison" className="max-h-40 rounded-xl object-contain" />}
         </section>
 
-        <MobilePrimaryButton type="submit" tone="danger" icon="report_problem">Confirmer l’échec</MobilePrimaryButton>
+        {error && <p role="alert" className="text-xs text-[#7F1D1D]">{error}</p>}
+        <MobilePrimaryButton type="submit" disabled={!comment.trim() || !['Affectée', 'En route', 'Arrivé', 'Livraison en cours'].includes(delivery.status)} tone="danger" icon="report_problem">Confirmer l’échec</MobilePrimaryButton>
       </form>
     </div>
   );

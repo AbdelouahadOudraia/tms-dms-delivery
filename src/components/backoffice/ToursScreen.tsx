@@ -4,6 +4,14 @@ import { StatusBadge } from '../common/StatusBadge';
 import { Delivery, DeliveryStatus, Tour } from '../../types';
 import { GoogleMapCard, GoogleMapMarker, GoogleMapRoutePoint } from '../maps/GoogleMapCard';
 import { PageHeader, SectionHeader } from '../common/BackofficeUI';
+import {
+  getDistrictsFromTourZone,
+  getDeliveryWarehouse,
+  getTourZoneLabel,
+  getTourZoneForDistrict,
+  TOUR_ZONE_OPTIONS,
+  WAREHOUSES,
+} from '../../data/logisticsReference';
 
 type CreateTourForm = {
   date: string;
@@ -15,21 +23,7 @@ type CreateTourForm = {
   deliveryIds: string[];
 };
 
-const ZONE_OPTIONS = [
-  'Casablanca Ouest (Maarif, Ain Diab, Hay Hassani)',
-  'Casablanca Centre & Port (Sidi Belyout, Belvédère)',
-  'Casablanca Est (Ain Sebaa, Sidi Moumen)',
-  'Casablanca Sud (Californie, Bouskoura)',
-];
-
-const getZoneOptionForDistrict = (district: string) =>
-  ZONE_OPTIONS.find((zone) =>
-    zone
-      .match(/\(([^)]+)\)/)?.[1]
-      .split(',')
-      .map((item) => item.trim().toLowerCase())
-      .includes(district.toLowerCase())
-  ) || ZONE_OPTIONS[0];
+const ZONE_OPTIONS = TOUR_ZONE_OPTIONS;
 
 const getStopMarkerKind = (status: DeliveryStatus): GoogleMapMarker['kind'] => {
   if (status === 'Validée' || status === 'À valider') return 'success';
@@ -38,14 +32,14 @@ const getStopMarkerKind = (status: DeliveryStatus): GoogleMapMarker['kind'] => {
   return 'pending';
 };
 
-const buildTourMapOverlay = (tourDeliveries: Delivery[]) => {
+const buildTourMapOverlay = (tourDeliveries: Delivery[], depotName: string) => {
   if (tourDeliveries.length === 0) {
     return {
       markers: [
         {
           id: 'hub',
           label: 'Dépôt',
-          detail: 'Casablanca Hub Ouest',
+          detail: depotName,
           kind: 'hub' as const,
           x: 28,
           y: 66,
@@ -77,7 +71,7 @@ const buildTourMapOverlay = (tourDeliveries: Delivery[]) => {
     {
       ...hubPoint,
       label: 'Dépôt',
-      detail: 'Casablanca Hub Ouest',
+      detail: depotName,
       kind: 'hub',
     },
     ...stopPoints.map((point, index) => {
@@ -120,6 +114,8 @@ export const ToursScreen: React.FC = () => {
   const [selectedDriverId, setSelectedDriverId] = useState<string>(drivers[0].id);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>(vehicles[0].id);
   const [dispatchSuccessToast, setDispatchSuccessToast] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [form, setForm] = useState<CreateTourForm>({
     date: '15 Septembre 2026',
     zone: ZONE_OPTIONS[0],
@@ -132,22 +128,24 @@ export const ToursScreen: React.FC = () => {
 
   const selectedTourSafe = tours.find((tour) => tour.id === selectedTour.id) || tours[0];
   const tourDeliveries = deliveries.filter((delivery) => delivery.tourId === selectedTourSafe.id);
+  const selectedDepotName = WAREHOUSES.find((warehouse) =>
+    selectedTourSafe.zone === warehouse.name || selectedTourSafe.zone === getTourZoneLabel(warehouse)
+  )?.name ?? (tourDeliveries[0] ? getDeliveryWarehouse(tourDeliveries[0])?.name : undefined) ?? selectedTourSafe.zone;
   const selectedTourMapOverlay = useMemo(
-    () => buildTourMapOverlay(tourDeliveries),
-    [tourDeliveries]
+    () => buildTourMapOverlay(tourDeliveries, selectedDepotName),
+    [tourDeliveries, selectedDepotName]
   );
 
   const candidateDeliveries = useMemo(() => {
-    const zoneDistricts = form.zone
-      .match(/\(([^)]+)\)/)?.[1]
-      .split(',')
-      .map((district) => district.trim().toLowerCase()) || [];
+    const zoneDistricts = getDistrictsFromTourZone(form.zone);
 
     return deliveries.filter(
       (delivery) =>
         delivery.status === 'À planifier' &&
         !delivery.tourId &&
+        !delivery.driverId &&
         delivery.deliveryDate === form.date &&
+        Boolean(getDeliveryWarehouse(delivery) && getTourZoneLabel(getDeliveryWarehouse(delivery)!) === form.zone) &&
         zoneDistricts.includes(delivery.district.toLowerCase())
     );
   }, [deliveries, form.date, form.zone]);
@@ -157,24 +155,39 @@ export const ToursScreen: React.FC = () => {
   }, [backofficeTab]);
 
   useEffect(() => {
+    if (!showCreatePage) return;
+    setForm((current) => ({
+      ...current,
+      driverId:
+        drivers.find((driver) => driver.id === current.driverId && driver.status === 'Disponible')?.id ||
+        drivers.find((driver) => driver.status === 'Disponible')?.id ||
+        current.driverId,
+      vehicleId:
+        vehicles.find((vehicle) => vehicle.id === current.vehicleId && vehicle.status === 'Disponible')?.id ||
+        vehicles.find((vehicle) => vehicle.status === 'Disponible')?.id ||
+        current.vehicleId,
+    }));
+  }, [drivers, showCreatePage, vehicles]);
+
+  useEffect(() => {
     if (!showCreatePage || planningSelectionIds.length === 0) return;
 
-    const selectedDeliveries = deliveries.filter((delivery) =>
-      planningSelectionIds.includes(delivery.id)
-    );
+    const selectedDeliveries = planningSelectionIds
+      .map((deliveryId) => deliveries.find((delivery) => delivery.id === deliveryId))
+      .filter((delivery): delivery is Delivery => Boolean(delivery));
     const firstDelivery = selectedDeliveries[0];
     if (!firstDelivery) return;
 
-    const nextZone = getZoneOptionForDistrict(firstDelivery.district);
-    const zoneDistricts = nextZone
-      .match(/\(([^)]+)\)/)?.[1]
-      .split(',')
-      .map((district) => district.trim().toLowerCase()) || [];
+    const origin = getDeliveryWarehouse(firstDelivery);
+    const nextZone = origin ? getTourZoneLabel(origin) : getTourZoneForDistrict(firstDelivery.district);
+    const zoneDistricts = getDistrictsFromTourZone(nextZone);
     const eligibleIds = selectedDeliveries
       .filter(
         (delivery) =>
           delivery.status === 'À planifier' &&
           !delivery.tourId &&
+          !delivery.driverId &&
+          getDeliveryWarehouse(delivery)?.id === origin?.id &&
           delivery.deliveryDate === (firstDelivery.deliveryDate || '15 Septembre 2026') &&
           zoneDistricts.includes(delivery.district.toLowerCase())
       )
@@ -207,24 +220,43 @@ export const ToursScreen: React.FC = () => {
     e.preventDefault();
     if (form.deliveryIds.length === 0) return;
 
-    const newTour = createTour(form);
-    setSelectedTour(newTour);
-    setSelectedDriverId(newTour.driverId);
-    setSelectedVehicleId(newTour.vehicleId);
-    setShowCreatePage(false);
-    setBackofficeTab('tours');
-    setPlanningSelectionIds([]);
-    setDispatchSuccessToast(`Tournée ${newTour.id} créée avec ${form.deliveryIds.length} livraison(s).`);
-    setTimeout(() => setDispatchSuccessToast(null), 3500);
-    setForm((prev) => ({ ...prev, deliveryIds: [] }));
+    try {
+      const newTour = createTour(form);
+      setSelectedTour(newTour);
+      setSelectedDriverId(newTour.driverId);
+      setSelectedVehicleId(newTour.vehicleId);
+      setShowCreatePage(false);
+      setBackofficeTab('tours');
+      setPlanningSelectionIds([]);
+      setCreateError(null);
+      setDispatchSuccessToast(
+        `Tournée ${newTour.id} créée avec ${newTour.deliveriesCount} livraison(s).`
+      );
+      setTimeout(() => setDispatchSuccessToast(null), 3500);
+      setForm((prev) => ({ ...prev, deliveryIds: [] }));
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'La tournée ne peut pas être créée.');
+    }
+  };
+
+  const openDispatchModal = () => {
+    setDispatchError(null);
+    setSelectedDriverId(selectedTourSafe.driverId);
+    setSelectedVehicleId(selectedTourSafe.vehicleId);
+    setShowDispatchModal(true);
   };
 
   const handleDispatchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    dispatchTour(selectedTourSafe.id, selectedDriverId, selectedVehicleId);
+    try {
+      dispatchTour(selectedTourSafe.id, selectedDriverId, selectedVehicleId);
+    } catch (error) {
+      setDispatchError(error instanceof Error ? error.message : 'Affectation impossible.');
+      return;
+    }
     setShowDispatchModal(false);
     setDispatchSuccessToast(
-      `Tournée ${selectedTourSafe.id} envoyée avec succès sur le terminal du chauffeur.`
+      `Tournée ${selectedTourSafe.id} démarrée dans la simulation chauffeur.`
     );
     setTimeout(() => setDispatchSuccessToast(null), 3500);
   };
@@ -256,8 +288,18 @@ export const ToursScreen: React.FC = () => {
           </div>
         </div>
 
-        <form onSubmit={handleCreateSubmit} className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-3 gap-5 overflow-hidden">
-          <div className="xl:col-span-2 flex flex-col gap-5 min-h-0 overflow-y-auto scrollbar-soft pr-1">
+        {createError && (
+          <div className="flex items-center justify-between rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-4 py-3 text-xs font-semibold text-[#991B1B]">
+            <span>{createError}</span>
+            <button type="button" onClick={() => setCreateError(null)} aria-label="Fermer">×</button>
+          </div>
+        )}
+
+        <form
+          onSubmit={handleCreateSubmit}
+          className="scrollbar-soft flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto xl:grid xl:grid-cols-3 xl:overflow-hidden"
+        >
+          <div className="flex shrink-0 flex-col gap-5 pr-1 xl:col-span-2 xl:min-h-0 xl:overflow-y-auto xl:scrollbar-soft">
             <section className="bg-white rounded-2xl border border-[#e2e8f0] shadow-xs p-5 space-y-4">
               <div>
                 <h2 className="text-sm font-bold text-[#1e293b]">1. Informations générales</h2>
@@ -269,7 +311,10 @@ export const ToursScreen: React.FC = () => {
                   <span className="text-xs font-bold text-[#1e293b]">Date</span>
                   <input
                     value={form.date}
-                    onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value }))}
+                    onChange={(e) => {
+                      setForm((prev) => ({ ...prev, date: e.target.value, deliveryIds: [] }));
+                      setCreateError(null);
+                    }}
                     className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-xs font-semibold text-[#1e293b] focus:border-[#0057A8] focus:outline-none"
                   />
                 </label>
@@ -323,7 +368,7 @@ export const ToursScreen: React.FC = () => {
                     onChange={(e) => setForm((prev) => ({ ...prev, driverId: e.target.value }))}
                     className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-xs font-semibold text-[#1e293b] bg-white focus:border-[#0057A8] focus:outline-none"
                   >
-                    {drivers.map((driver) => (
+                    {drivers.filter((driver) => driver.status === 'Disponible').map((driver) => (
                       <option key={driver.id} value={driver.id}>
                         {driver.name} ({driver.status})
                       </option>
@@ -338,7 +383,7 @@ export const ToursScreen: React.FC = () => {
                     onChange={(e) => setForm((prev) => ({ ...prev, vehicleId: e.target.value }))}
                     className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-xs font-semibold text-[#1e293b] bg-white focus:border-[#0057A8] focus:outline-none"
                   >
-                    {vehicles.map((vehicle) => (
+                    {vehicles.filter((vehicle) => vehicle.status === 'Disponible').map((vehicle) => (
                       <option key={vehicle.id} value={vehicle.id}>
                         {vehicle.id} - {vehicle.model}
                       </option>
@@ -396,7 +441,7 @@ export const ToursScreen: React.FC = () => {
             </section>
           </div>
 
-          <aside className="bg-white rounded-2xl border border-[#e2e8f0] shadow-xs p-5 h-fit space-y-4">
+          <aside className="h-fit shrink-0 space-y-4 rounded-2xl border border-[#e2e8f0] bg-white p-5 shadow-xs">
             <div>
               <h2 className="text-sm font-bold text-[#1e293b]">Résumé de création</h2>
               <p className="text-xs text-[#64748b] mt-0.5">Contrôle rapide avant enregistrement.</p>
@@ -549,7 +594,8 @@ export const ToursScreen: React.FC = () => {
 
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setShowDispatchModal(true)}
+                onClick={openDispatchModal}
+                disabled={['Terminée', 'Annulée', 'À clôturer'].includes(selectedTourSafe.status)}
                 className="bo-button-secondary"
               >
                 <span className="material-symbols-outlined text-[16px]">edit</span>
@@ -557,7 +603,8 @@ export const ToursScreen: React.FC = () => {
               </button>
 
               <button
-                onClick={() => setShowDispatchModal(true)}
+                onClick={openDispatchModal}
+                disabled={['Terminée', 'Annulée', 'À clôturer'].includes(selectedTourSafe.status)}
                 className="bo-button-primary"
               >
                 <span className="material-symbols-outlined text-[16px]">send</span>
@@ -579,7 +626,7 @@ export const ToursScreen: React.FC = () => {
 
           <div className="px-4 pb-4 border-b border-[#e2e8f0]">
             <GoogleMapCard
-              query={`Casablanca ${selectedTourSafe.zone}`}
+              query={selectedDepotName}
               zoom={13}
               title="Aperçu cartographique"
               className="h-40"
@@ -630,6 +677,7 @@ export const ToursScreen: React.FC = () => {
             onSubmit={handleDispatchSubmit}
             className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl animate-in zoom-in-95"
           >
+            {dispatchError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-xs text-red-800">{dispatchError}</p>}
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <div>
                 <span className="font-mono text-xs font-bold text-[#0057A8]">{selectedTourSafe.id}</span>
@@ -645,8 +693,10 @@ export const ToursScreen: React.FC = () => {
                 onChange={(e) => setSelectedDriverId(e.target.value)}
                 className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-xs font-semibold text-[#1e293b]"
               >
-                {drivers.map((d) => (
-                  <option key={d.id} value={d.id}>{d.name} ({d.status} • {d.phone})</option>
+                {drivers.filter((d) => d.status === 'Disponible' || d.id === selectedTourSafe.driverId).map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} ({d.id === selectedTourSafe.driverId ? 'Affecté à cette tournée' : d.status} • {d.phone})
+                  </option>
                 ))}
               </select>
             </div>
@@ -658,16 +708,18 @@ export const ToursScreen: React.FC = () => {
                 onChange={(e) => setSelectedVehicleId(e.target.value)}
                 className="w-full h-10 px-3 rounded-lg border border-[#cbd5e1] text-xs font-semibold text-[#1e293b]"
               >
-                {vehicles.map((v) => (
-                  <option key={v.id} value={v.id}>{v.id} - {v.model} ({v.capacity})</option>
+                {vehicles.filter((v) => v.status === 'Disponible' || v.id === selectedTourSafe.vehicleId).map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.id} - {v.model} ({v.capacity}{v.id === selectedTourSafe.vehicleId ? ' • Affecté à cette tournée' : ''})
+                  </option>
                 ))}
               </select>
             </div>
 
             <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200 text-xs text-blue-900 space-y-1">
-              <span className="font-bold block">Transmission push mobile</span>
+              <span className="font-bold block">Simulation de l’envoi au chauffeur</span>
               <p className="text-[11px] text-blue-800">
-                La tournée sera instantanément envoyée sur l'application chauffeur Android avec les {tourDeliveries.length} livraisons ordonnancées.
+                La tournée passera en cours et apparaîtra dans l’application chauffeur de cette maquette avec ses {tourDeliveries.length} livraisons ordonnancées.
               </p>
             </div>
 

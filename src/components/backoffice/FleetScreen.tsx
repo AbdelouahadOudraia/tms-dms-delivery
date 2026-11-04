@@ -21,6 +21,8 @@ export const FleetScreen: React.FC<FleetScreenProps> = ({ defaultTab = 'drivers'
   const [plate, setPlate] = useState('');
   const [model, setModel] = useState('');
   const [capacity, setCapacity] = useState('12m³');
+  const [vehicleType, setVehicleType] = useState<NonNullable<Vehicle['type']>>('Fourgon');
+  const [maxLoadKg, setMaxLoadKg] = useState('1200');
   const isDrivers = defaultTab === 'drivers';
 
   const handleAdd = (event: React.FormEvent) => {
@@ -31,8 +33,8 @@ export const FleetScreen: React.FC<FleetScreenProps> = ({ defaultTab = 'drivers'
       setName('');
       setPhone('');
     } else {
-      if (!plate.trim() || !model.trim()) return;
-      addVehicle({ id: plate.trim().toUpperCase(), model: model.trim(), capacity, status: 'Disponible' });
+      if (!plate.trim() || !model.trim() || !Number.isFinite(Number(maxLoadKg)) || Number(maxLoadKg) <= 0) return;
+      addVehicle({ id: plate.trim().toUpperCase(), model: model.trim(), capacity, type: vehicleType, maxLoadKg: Number(maxLoadKg), status: 'Disponible' });
       setPlate('');
       setModel('');
     }
@@ -108,6 +110,8 @@ export const FleetScreen: React.FC<FleetScreenProps> = ({ defaultTab = 'drivers'
                 <label className="block text-[13px] font-medium text-[#475569]">Immatriculation<input value={plate} onChange={(event) => setPlate(event.target.value)} placeholder="12345-A-6" className="bo-input mt-1.5 w-full font-mono" required /></label>
                 <label className="block text-[13px] font-medium text-[#475569]">Modèle<input value={model} onChange={(event) => setModel(event.target.value)} placeholder="Renault Master" className="bo-input mt-1.5 w-full" required /></label>
                 <label className="block text-[13px] font-medium text-[#475569]">Capacité<input value={capacity} onChange={(event) => setCapacity(event.target.value)} className="bo-input mt-1.5 w-full" required /></label>
+                <label className="block text-[13px] font-medium text-[#475569]">Type de véhicule<select value={vehicleType} onChange={(event) => setVehicleType(event.target.value as NonNullable<Vehicle['type']>)} className="bo-input mt-1.5 w-full"><option>Fourgon</option><option>3.5T</option><option>Camion</option></select></label>
+                <label className="block text-[13px] font-medium text-[#475569]">Charge utile (kg)<input type="number" min="1" step="1" value={maxLoadKg} onChange={(event) => setMaxLoadKg(event.target.value)} className="bo-input mt-1.5 w-full" required /></label>
               </>
             )}
             <div className="flex justify-end gap-2 border-t border-[#E2E8F0] pt-4"><button type="button" onClick={() => setShowAdd(false)} className="bo-button-secondary">Annuler</button><button type="submit" className="bo-button-primary">Enregistrer</button></div>

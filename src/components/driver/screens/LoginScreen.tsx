@@ -3,12 +3,17 @@ import { useTms } from '../../../context/TmsContext';
 import { MobilePrimaryButton } from '../MobileUI';
 
 export const LoginScreen: React.FC = () => {
-  const { setDriverScreen } = useTms();
-  const [identifiant, setIdentifiant] = useState('06 61 22 33 44');
+  const { drivers, currentDriver, setActiveDriverId, setDriverScreen } = useTms();
+  const [identifiant, setIdentifiant] = useState(currentDriver.phone);
+  const [loginError, setLoginError] = useState('');
   const [password, setPassword] = useState('••••••••');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const normalizedPhone = identifiant.replace(/\s/g, '');
+    const driver = drivers.find((item) => item.phone.replace(/\s/g, '') === normalizedPhone);
+    if (!driver) { setLoginError('Choisissez un chauffeur de démonstration ou saisissez son téléphone.'); return; }
+    setActiveDriverId(driver.id);
     setDriverScreen('home');
   };
 
@@ -36,7 +41,28 @@ export const LoginScreen: React.FC = () => {
       >
         <div>
           <h2 className="text-sm font-bold text-[#1D2229]">Connexion chauffeur</h2>
-          <p className="mt-0.5 text-xs text-[#5B6470]">Session démo : Youssef El Amrani</p>
+          <p className="mt-0.5 text-xs text-[#5B6470]">Session démo : {currentDriver.name}</p>
+          {loginError && <p role="alert" className="mt-2 text-xs text-[#7F1D1D]">{loginError}</p>}
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block text-xs font-bold text-[#1D2229]">Choisir une session de démonstration</label>
+          <select
+            value={drivers.find((driver) => driver.phone === identifiant)?.id || ''}
+            onChange={(event) => {
+              const driver = drivers.find((item) => item.id === event.target.value);
+              if (!driver) return;
+              setIdentifiant(driver.phone);
+              setLoginError('');
+            }}
+            className="h-11 w-full rounded-2xl border border-[#DDE7F0] bg-[#FBFDFF] px-3 text-xs font-semibold text-[#1D2229] outline-none focus:border-[#0057A8]"
+          >
+            {drivers.map((driver) => (
+              <option key={driver.id} value={driver.id}>
+                {driver.name} · {driver.currentTourId || 'Aucune tournée'}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="space-y-1.5">

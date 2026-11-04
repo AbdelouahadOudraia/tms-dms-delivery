@@ -90,6 +90,8 @@ export interface ProofOfDelivery {
 export interface Delivery {
   id: string; // e.g. "CMD-45821"
   orderId: string;
+  previousAttemptId?: string;
+  nextAttemptId?: string;
   deliveryDate?: string;
   customerName: string;
   phone: string;
@@ -107,6 +109,11 @@ export interface Delivery {
   driverId: string; // e.g. "DRV-001"
   driverName: string;
   vehicleId: string; // e.g. "12345-A-6"
+  warehouseId?: string;
+  packageCount?: number;
+  totalWeightKg?: number;
+  requiredVehicle?: 'Fourgon' | '3.5T' | 'Camion';
+  goodsValue?: number;
   items: OrderItem[];
   instructions?: string;
   coordinates: {
@@ -150,6 +157,8 @@ export interface Vehicle {
   id: string; // plate e.g. "12345-A-6"
   model: string;
   capacity: string;
+  type?: 'Fourgon' | '3.5T' | 'Camion';
+  maxLoadKg?: number;
   status: 'En service' | 'Disponible' | 'Maintenance';
   assignedDriverId?: string;
 }
@@ -166,6 +175,23 @@ export interface Incident {
   resolved: boolean;
   status?: IncidentStatus;
   severity?: IncidentSeverity;
+  sourceStatus?: 'Échec' | 'Rejetée';
+  treatment?: { action: 'retry' | 'replace' | 'return'; note: string; timestamp: string; nextAttemptId?: string };
+}
+
+export interface FailedDeliveryTreatment {
+  action: 'retry' | 'replace' | 'return';
+  note: string;
+  confirmed: boolean;
+  date: string;
+  startTime: string;
+  endTime: string;
+  address: string;
+  phone: string;
+  district: string;
+  city: string;
+  warehouseId: string;
+  coordinates?: { lat: number; lng: number };
 }
 
 

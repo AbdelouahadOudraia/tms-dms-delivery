@@ -12,6 +12,7 @@ const MainApp: React.FC = () => {
     setDriverScreen,
     setSelectedDeliveryId,
     setBackofficeTab,
+    currentDriver,
   } = useTms();
 
   const pendingCount = deliveries.filter((d) => d.status === 'À valider').length;
@@ -144,7 +145,7 @@ const MainApp: React.FC = () => {
                   <span>Terminal Chauffeur (En direct)</span>
                 </span>
                 <span className="font-mono text-[10px] text-[#0057A8] font-bold">
-                  Youssef El Amrani
+                  {currentDriver.name}
                 </span>
               </div>
               <div className="flex-1 overflow-hidden">

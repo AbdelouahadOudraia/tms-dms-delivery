@@ -4,7 +4,7 @@ import { MetricTile, MobilePrimaryButton, MobileScreenHeader } from '../MobileUI
 
 export const ArrivalScreen: React.FC = () => {
   const { deliveries, selectedDeliveryId, setDriverScreen } = useTms();
-  const delivery = deliveries.find((d) => d.id === selectedDeliveryId) || deliveries[1];
+  const delivery = deliveries.find((d) => d.id === selectedDeliveryId)!;
   const arrivalTime = delivery.arrivalTime || '10:32';
 
   return (

@@ -14,6 +14,7 @@ import { FailedDeliveryScreen } from './screens/FailedDeliveryScreen';
 import { TourCompletedScreen } from './screens/TourCompletedScreen';
 import { HistoryScreen } from './screens/HistoryScreen';
 import { ProfileScreen } from './screens/ProfileScreen';
+import { DriverEmptyState } from './DriverEmptyState';
 
 const demoScreens = [
   { id: 'login', label: 'Connexion', icon: 'login' },
@@ -33,7 +34,10 @@ const demoScreens = [
 ];
 
 export const DriverApp: React.FC = () => {
-  const { driverScreen, setDriverScreen } = useTms();
+  const { driverScreen, setDriverScreen, deliveries, selectedDeliveryId, currentDriver } = useTms();
+  const needsDelivery = ['detail', 'history-detail', 'navigation', 'arrival', 'items', 'pod', 'success', 'failed'].includes(driverScreen);
+  const selectedDelivery = deliveries.find((delivery) => delivery.id === selectedDeliveryId && delivery.driverId === currentDriver.id);
+  const canShowScreen = !needsDelivery || Boolean(selectedDelivery);
 
   const isFullscreenFlow =
     driverScreen === 'login' ||
@@ -72,12 +76,13 @@ export const DriverApp: React.FC = () => {
           </div>
 
           {/* Active Screen View */}
-          <div className="flex-1 flex flex-col overflow-hidden relative">
+          <div key={`${currentDriver.id}:${driverScreen}:${needsDelivery ? selectedDeliveryId : ''}`} className="flex-1 flex flex-col overflow-hidden relative">
+            {!canShowScreen ? <DriverEmptyState message="Sélectionnez une livraison de votre tournée." /> : <>
             {driverScreen === 'login' && <LoginScreen />}
             {driverScreen === 'home' && <HomeScreen />}
             {driverScreen === 'tour-overview' && <TourOverviewScreen />}
             {driverScreen === 'deliveries' && <DeliveriesScreen />}
-            {driverScreen === 'detail' && <DeliveryDetailScreen />}
+            {(driverScreen === 'detail' || driverScreen === 'history-detail') && <DeliveryDetailScreen />}
             {driverScreen === 'navigation' && <NavigationScreen />}
             {driverScreen === 'arrival' && <ArrivalScreen />}
             {driverScreen === 'items' && <ItemCheckScreen />}
@@ -87,6 +92,7 @@ export const DriverApp: React.FC = () => {
             {driverScreen === 'completed' && <TourCompletedScreen />}
             {driverScreen === 'history' && <HistoryScreen />}
             {driverScreen === 'profile' && <ProfileScreen />}
+            </>}
           </div>
 
           {/* Android Bottom Navigation Bar (Tabs) */}
@@ -123,7 +129,7 @@ export const DriverApp: React.FC = () => {
               <button
                 onClick={() => setDriverScreen('history')}
                 className={`flex flex-col items-center gap-0.5 py-1 px-3 rounded-lg transition-colors ${
-                  driverScreen === 'history'
+                  driverScreen === 'history' || driverScreen === 'history-detail'
                     ? 'text-[#0057A8] font-bold'
                     : 'text-[#5B6470] hover:text-[#1D2229]'
                 }`}

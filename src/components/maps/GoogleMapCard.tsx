@@ -109,6 +109,7 @@ export const GoogleMapCard: React.FC<GoogleMapCardProps> = ({
   const labelClass = markerSize === 'sm' ? 'top-7 text-[9px]' : 'top-9 text-[10px]';
   const numberedMarkerKinds = ['stop', 'success', 'failed', 'pending'];
   const polylinePoints = routePath.map((point) => `${point.x},${point.y}`).join(' ');
+  const hasOperationalOverlay = markers.length > 0 || routePath.length > 0;
 
   return (
     <div className={`relative overflow-hidden rounded-lg border border-[#D5E2EF] bg-[#E8F2FB] ${className}`}>
@@ -119,15 +120,23 @@ export const GoogleMapCard: React.FC<GoogleMapCardProps> = ({
         draggable={false}
       />
 
-      <iframe
-        title={title}
-        src={embedUrl}
-        className={`absolute inset-0 h-full w-full border-0 transition-opacity duration-300 ${status === 'loaded' ? 'opacity-100' : 'opacity-0'}`}
-        loading="eager"
-        allowFullScreen
-        referrerPolicy="no-referrer-when-downgrade"
-        onLoad={handleMapLoad}
-      />
+      {!hasOperationalOverlay && (
+        <iframe
+          title={title}
+          src={embedUrl}
+          className={`absolute inset-0 h-full w-full border-0 transition-opacity duration-300 ${status === 'loaded' ? 'opacity-100' : 'opacity-0'}`}
+          loading="eager"
+          allowFullScreen
+          referrerPolicy="no-referrer-when-downgrade"
+          onLoad={handleMapLoad}
+        />
+      )}
+
+      {hasOperationalOverlay && (
+        <span className="absolute left-3 top-3 z-20 rounded-md border border-[#D5E2EF] bg-white/95 px-2 py-1 text-[10px] font-semibold text-[#475569] shadow-sm">
+          Aperçu statique de la tournée
+        </span>
+      )}
 
       {routePath.length > 1 && (
         <svg className="pointer-events-none absolute inset-0 z-[9] h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">

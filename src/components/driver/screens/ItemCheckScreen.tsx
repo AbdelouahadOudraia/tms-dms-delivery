@@ -4,19 +4,20 @@ import { MobilePrimaryButton, MobileProgressBar, MobileScreenHeader } from '../M
 
 export const ItemCheckScreen: React.FC = () => {
   const { deliveries, selectedDeliveryId, verifyDeliveryItems, setDriverScreen } = useTms();
-  const delivery = deliveries.find((d) => d.id === selectedDeliveryId) || deliveries[1];
-  const [checkedIds, setCheckedIds] = useState<string[]>(delivery.items.map((it) => it.id));
+  const delivery = deliveries.find((d) => d.id === selectedDeliveryId)!;
+  const [checkedIds, setCheckedIds] = useState<string[]>(
+    delivery.items.filter((item) => item.checked).map((item) => item.id)
+  );
 
   const toggleItem = (id: string) => {
     setCheckedIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
   };
 
   const handleContinue = () => {
-    verifyDeliveryItems(delivery.id, checkedIds);
-    setDriverScreen('pod');
+    if (verifyDeliveryItems(delivery.id, checkedIds)) setDriverScreen('pod');
   };
 
-  const allChecked = checkedIds.length === delivery.items.length;
+  const allChecked = delivery.items.length > 0 && checkedIds.length === delivery.items.length && ['Arrivé', 'Livraison en cours', 'Rejetée'].includes(delivery.status);
   const progress = delivery.items.length ? Math.round((checkedIds.length / delivery.items.length) * 100) : 0;
 
   return (
@@ -24,7 +25,7 @@ export const ItemCheckScreen: React.FC = () => {
       <MobileScreenHeader
         title="Contrôle colis"
         subtitle={delivery.orderId}
-        onBack={() => setDriverScreen('arrival')}
+        onBack={() => setDriverScreen(delivery.status === 'Rejetée' ? 'detail' : 'arrival')}
         right={<span className="rounded-full border border-[#BCD6ED] bg-[#E8F2FB] px-2 py-1 text-xs font-bold text-[#0057A8]">{checkedIds.length}/{delivery.items.length}</span>}
       />
 

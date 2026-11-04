@@ -1,85 +1,16 @@
 import React, { useMemo, useState } from 'react';
 import { useTms } from '../../context/TmsContext';
 import { SimpleModal } from '../common/BackofficeUI';
+import { StatusBadge } from '../common/StatusBadge';
 import type { Delivery } from '../../types';
-
-type DeliveryLogistics = {
-  packageCount: number;
-  totalWeight: number;
-  requiredVehicle: 'Fourgon' | '3.5T' | 'Camion';
-  goodsValue: number;
-};
-
-type WarehouseInfo = {
-  id: string;
-  name: string;
-  code: string;
-  address: string;
-  capacity: string;
-  zones: string[];
-};
-
-const WAREHOUSES: WarehouseInfo[] = [
-  {
-    id: 'CAS-OUEST',
-    name: 'Casablanca Hub Ouest',
-    code: 'DEP-CAS-O',
-    address: "Zone logistique Lissasfa, route d'El Jadida",
-    capacity: '1 600 palettes',
-    zones: ['Maarif', 'Maarif Extension', 'Ain Diab', 'Hay Hassani', 'Bourgogne', 'CIL', 'Oasis'],
-  },
-  {
-    id: 'CAS-CENTRE',
-    name: 'Casablanca Hub Centre',
-    code: 'DEP-CAS-C',
-    address: 'Roches Noires, Casablanca',
-    capacity: '1 200 palettes',
-    zones: ['Centre Ville', 'Ghandi', 'Racine', 'Sidi Belyout', 'Belvédère', 'Derb Sultan', 'Roches Noires'],
-  },
-  {
-    id: 'CAS-EST',
-    name: 'Casablanca Hub Est',
-    code: 'DEP-CAS-E',
-    address: 'Zone industrielle Ain Sebaa, Casablanca',
-    capacity: '2 000 palettes',
-    zones: ['Ain Sebaa', 'Sidi Moumen'],
-  },
-  {
-    id: 'CAS-SUD',
-    name: 'Casablanca Hub Sud',
-    code: 'DEP-CAS-S',
-    address: 'Parc industriel Bouskoura',
-    capacity: '900 palettes',
-    zones: ['Bouskoura'],
-  },
-];
+import {
+  getDeliveryLogistics,
+  getDeliveryWarehouse,
+  WAREHOUSES,
+} from '../../data/logisticsReference';
+import { sortDeliveriesByTimeSlot } from '../../utils/workflow';
 
 const formatBlNumber = (orderId: string) => orderId.replace(/^CMD-/, 'BL-');
-
-const getDeliveryWarehouse = (delivery: Delivery) =>
-  WAREHOUSES.find((warehouse) => warehouse.zones.includes(delivery.district)) || WAREHOUSES[0];
-
-const parseWeight = (weight: string) => {
-  const normalized = weight.replace(',', '.').replace(/[^\d.]/g, '');
-  return Number.parseFloat(normalized) || 0;
-};
-
-const getDeliveryLogistics = (delivery: Delivery): DeliveryLogistics => {
-  const packageCount = delivery.items.reduce((total, item) => total + item.quantity, 0);
-  const totalWeight = delivery.items.reduce(
-    (total, item) => total + parseWeight(item.weight) * item.quantity,
-    0
-  );
-  const hasBulkyItem = delivery.items.some((item) => item.category === 'Lourd');
-  const requiredVehicle =
-    totalWeight >= 80 ? 'Camion' : totalWeight >= 35 || hasBulkyItem ? '3.5T' : 'Fourgon';
-  const goodsValue = delivery.items.reduce((total, item) => {
-    const unitValue = item.category === 'Fragile' ? 3400 : item.category === 'Lourd' ? 5200 : 1800;
-    return total + unitValue * item.quantity;
-  }, 0);
-
-  return { packageCount, totalWeight, requiredVehicle, goodsValue };
-};
 
 export const OrdersScreen: React.FC = () => {
   const {
@@ -90,6 +21,7 @@ export const OrdersScreen: React.FC = () => {
   } = useTms();
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [dateFilter, setDateFilter] = useState('Toutes');
   const [districtFilter, setDistrictFilter] = useState('Tous');
   const [timeSlotFilter, setTimeSlotFilter] = useState('Tous');
   const [vehicleFilter, setVehicleFilter] = useState('Tous');
@@ -116,22 +48,28 @@ export const OrdersScreen: React.FC = () => {
           delivery.customerName.toLowerCase().includes(search) ||
           delivery.address.toLowerCase().includes(search);
         const matchesDistrict = districtFilter === 'Tous' || delivery.district === districtFilter;
+        const matchesDate = dateFilter === 'Toutes' || delivery.deliveryDate === dateFilter;
         const matchesTimeSlot = timeSlotFilter === 'Tous' || delivery.timeSlot === timeSlotFilter;
         const matchesVehicle = vehicleFilter === 'Tous' || logistics.requiredVehicle === vehicleFilter;
         const selectedWarehouse = WAREHOUSES.find((warehouse) => warehouse.id === warehouseFilter);
         const matchesWarehouse =
-          warehouseFilter === 'Tous' || Boolean(selectedWarehouse?.zones.includes(delivery.district));
+          warehouseFilter === 'Tous' || getDeliveryWarehouse(delivery)?.id === selectedWarehouse?.id;
 
-        return matchesSearch && matchesDistrict && matchesTimeSlot && matchesVehicle && matchesWarehouse;
+        return matchesSearch && matchesDate && matchesDistrict && matchesTimeSlot && matchesVehicle && matchesWarehouse;
       }),
-    [districtFilter, searchTerm, timeSlotFilter, unassignedDeliveries, vehicleFilter, warehouseFilter]
+    [dateFilter, districtFilter, searchTerm, timeSlotFilter, unassignedDeliveries, vehicleFilter, warehouseFilter]
+  );
+
+  const deliveryDates = useMemo(
+    () => Array.from(new Set(unassignedDeliveries.map((delivery) => delivery.deliveryDate).filter(Boolean))) as string[],
+    [unassignedDeliveries]
   );
 
   const districts = useMemo(
     () => {
       const warehouse = WAREHOUSES.find((item) => item.id === warehouseFilter);
       const warehouseDeliveries = warehouse
-        ? unassignedDeliveries.filter((delivery) => warehouse.zones.includes(delivery.district))
+        ? unassignedDeliveries.filter((delivery) => getDeliveryWarehouse(delivery)?.id === warehouse.id)
         : unassignedDeliveries;
       return Array.from(new Set(warehouseDeliveries.map((delivery) => delivery.district)));
     },
@@ -142,6 +80,26 @@ export const OrdersScreen: React.FC = () => {
     [unassignedDeliveries]
   );
   const selectedWarehouse = WAREHOUSES.find((warehouse) => warehouse.id === warehouseFilter);
+  const selectedDeliveries = useMemo(
+    () => unassignedDeliveries.filter((delivery) => selectedIds.includes(delivery.id)),
+    [selectedIds, unassignedDeliveries]
+  );
+  const selectedDates = new Set(selectedDeliveries.map((delivery) => delivery.deliveryDate));
+  const selectedWarehouses = new Set(
+    selectedDeliveries.map((delivery) => getDeliveryWarehouse(delivery)?.id)
+  );
+  const selectionIssue =
+    selectedDates.has(undefined) || selectedDates.has('')
+      ? 'Renseignez la date de chaque BL avant de créer une tournée.'
+      : selectedWarehouses.has(undefined)
+        ? 'Renseignez l’entrepôt de départ de chaque BL.'
+      : selectedDates.size > 1
+      ? 'Les BL sélectionnés doivent avoir la même date de livraison.'
+      : selectedWarehouses.size > 1
+        ? 'Les BL sélectionnés doivent partir du même entrepôt.'
+        : selectedDeliveries.some((delivery) => delivery.status === 'À confirmer')
+          ? 'Validez la sélection avant de créer la tournée.'
+        : null;
 
   const displayedDeliveries = useMemo(() => {
     if (optimizedOrderIds.length === 0) return filteredDeliveries;
@@ -182,36 +140,44 @@ export const OrdersScreen: React.FC = () => {
 
   const handleCreateTour = () => {
     if (selectedIds.length === 0) return;
+    if (selectionIssue) {
+      setActionMessage(selectionIssue);
+      return;
+    }
 
-    selectedIds.forEach((deliveryId) => confirmDeliveryOrder(deliveryId));
-    setPlanningSelectionIds(selectedIds);
+    const orderedSelection = [
+      ...optimizedOrderIds.filter((id) => selectedIds.includes(id)),
+      ...selectedIds.filter((id) => !optimizedOrderIds.includes(id)),
+    ];
+    setPlanningSelectionIds(orderedSelection);
     setBackofficeTab('tour-create');
   };
 
   const handleOptimize = () => {
     if (selectedIds.length === 0) return;
 
-    const optimizedIds = unassignedDeliveries
-      .filter((delivery) => selectedIds.includes(delivery.id))
-      .sort(
-        (first, second) =>
-          first.district.localeCompare(second.district, 'fr') ||
-          first.timeSlot.localeCompare(second.timeSlot, 'fr')
-      )
+    const optimizedIds = sortDeliveriesByTimeSlot(
+      unassignedDeliveries.filter((delivery) => selectedIds.includes(delivery.id))
+    )
       .map((delivery) => delivery.id);
 
     setOptimizedOrderIds(optimizedIds);
     setActionMessage(
-      `${optimizedIds.length} BL optimisé(s) par zone et créneau. Vous pouvez maintenant valider la sélection.`
+      `${optimizedIds.length} BL optimisé(s) par créneau, puis par zone. Vous pouvez maintenant valider la sélection.`
     );
   };
 
   const handleValidateAll = () => {
     if (selectedIds.length === 0) return;
 
-    selectedIds.forEach((deliveryId) => confirmDeliveryOrder(deliveryId));
+    const confirmableIds = selectedDeliveries
+      .filter((delivery) => delivery.status === 'À confirmer')
+      .map((delivery) => delivery.id);
+    confirmableIds.forEach((deliveryId) => confirmDeliveryOrder(deliveryId));
     setActionMessage(
-      `${selectedIds.length} BL validé(s) et prêt(s) pour la création d'une tournée.`
+      confirmableIds.length > 0
+        ? `${confirmableIds.length} BL validé(s) et prêt(s) pour la création d'une tournée.`
+        : 'Tous les BL sélectionnés sont déjà prêts pour la planification.'
     );
   };
 
@@ -232,8 +198,9 @@ export const OrdersScreen: React.FC = () => {
           <button
             type="button"
             onClick={handleCreateTour}
-            disabled={selectedIds.length === 0}
-            className={`bo-button-primary ${selectedIds.length === 0 ? 'cursor-not-allowed opacity-50' : ''}`}
+            disabled={selectedIds.length === 0 || Boolean(selectionIssue)}
+            title={selectionIssue || undefined}
+            className={`bo-button-primary ${selectedIds.length === 0 || selectionIssue ? 'cursor-not-allowed opacity-50' : ''}`}
           >
             <span className="material-symbols-outlined text-[18px]">alt_route</span>
             Créer une tournée ({selectedIds.length})
@@ -241,7 +208,7 @@ export const OrdersScreen: React.FC = () => {
         </div>
       </div>
 
-      <div className="bo-panel grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-[1.7fr_1fr_1fr_1fr_1fr]">
+      <div className="bo-panel grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-[1.6fr_repeat(5,minmax(0,1fr))]">
         <label className="text-[13px] font-medium text-[#475569]">
           <span className="mb-1.5 block">Recherche</span>
           <div className="relative">
@@ -257,6 +224,20 @@ export const OrdersScreen: React.FC = () => {
             />
           </div>
         </label>
+
+        <FilterSelect
+          label="Date"
+          value={dateFilter}
+          onChange={(value) => {
+            setDateFilter(value);
+            setSelectedIds([]);
+            setOptimizedOrderIds([]);
+            setActionMessage(null);
+          }}
+          allLabel="Toutes les dates"
+          options={deliveryDates}
+          allValue="Toutes"
+        />
 
         <label className="text-[13px] font-medium text-[#475569]">
           <span className="mb-1.5 block">Entrepôt</span>
@@ -306,7 +287,7 @@ export const OrdersScreen: React.FC = () => {
         />
 
         {selectedWarehouse && (
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-md border border-[#DBEAFE] bg-[#F8FBFF] px-3 py-2 text-[12px] text-[#475569] sm:col-span-2 xl:col-span-5">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-md border border-[#DBEAFE] bg-[#F8FBFF] px-3 py-2 text-[12px] text-[#475569] sm:col-span-2 xl:col-span-6">
             <span className="inline-flex items-center gap-1.5 font-bold text-[#0057A8]">
               <span className="material-symbols-outlined text-[17px]">warehouse</span>
               {selectedWarehouse.name}
@@ -333,6 +314,13 @@ export const OrdersScreen: React.FC = () => {
           >
             ×
           </button>
+        </div>
+      )}
+
+      {selectionIssue && (
+        <div className="flex items-center gap-2 rounded-md border border-[#FED7AA] bg-[#FFF7ED] px-4 py-2.5 text-[13px] text-[#9A3412]">
+          <span className="material-symbols-outlined text-[18px]">warning</span>
+          <span>{selectionIssue} Ajustez la sélection avant de créer la tournée.</span>
         </div>
       )}
 
@@ -363,7 +351,7 @@ export const OrdersScreen: React.FC = () => {
               }`}
             >
               <span className="material-symbols-outlined text-[16px]">done_all</span>
-              Valider tous
+              Valider la sélection ({selectedIds.length})
             </button>
             {selectedIds.length > 0 && (
             <button
@@ -382,7 +370,7 @@ export const OrdersScreen: React.FC = () => {
         </div>
 
         <div className="flex-1 overflow-auto scrollbar-soft">
-          <table className="bo-table min-w-[1180px]">
+          <table className="bo-table min-w-[1230px]">
             <thead className="sticky top-0 z-10 border-b border-[#e2e8f0] bg-slate-50 text-[#64748b]">
               <tr>
                 <th className="w-12 px-4 py-3 text-center">
@@ -396,12 +384,14 @@ export const OrdersScreen: React.FC = () => {
                 </th>
                 <th className="px-3 py-3 font-semibold">N° BL</th>
                 <th className="px-3 py-3 font-semibold">Client</th>
+                <th className="px-3 py-3 font-semibold">Date</th>
                 <th className="px-3 py-3 font-semibold">Entrepôt</th>
                 <th className="px-3 py-3 font-semibold">Zone / Quartier</th>
                 <th className="px-3 py-3 font-semibold">Créneau</th>
                 <th className="px-3 py-3 font-semibold">Nb colis</th>
                 <th className="px-3 py-3 font-semibold">Poids</th>
                 <th className="px-3 py-3 font-semibold">Véhicule requis</th>
+                <th className="px-3 py-3 font-semibold">Statut</th>
                 <th className="px-4 py-3 text-right font-semibold">Actions</th>
               </tr>
             </thead>
@@ -429,9 +419,12 @@ export const OrdersScreen: React.FC = () => {
                       {formatBlNumber(delivery.orderId)}
                     </td>
                     <td className="px-3 py-3 font-bold text-[#1e293b]">{delivery.customerName}</td>
+                    <td className="whitespace-nowrap px-3 py-3 font-medium text-[#475569]">
+                      {delivery.deliveryDate || 'Non renseignée'}
+                    </td>
                     <td className="px-3 py-3">
-                      <p className="whitespace-nowrap font-semibold text-[#334155]">{warehouse.name}</p>
-                      <p className="mt-0.5 font-mono text-[11px] text-[#64748B]">{warehouse.code}</p>
+                      <p className="whitespace-nowrap font-semibold text-[#334155]">{warehouse?.name || 'À renseigner'}</p>
+                      <p className="mt-0.5 font-mono text-[11px] text-[#64748B]">{warehouse?.code || '—'}</p>
                     </td>
                     <td className="px-3 py-3 text-[#64748b]">
                       {delivery.district}, {delivery.city}
@@ -449,6 +442,9 @@ export const OrdersScreen: React.FC = () => {
                       <span className="inline-flex rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2 py-0.5 text-[12px] font-semibold text-[#0057A8]">
                         {logistics.requiredVehicle}
                       </span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3">
+                      <StatusBadge status={delivery.status} size="sm" />
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button
@@ -493,8 +489,9 @@ const FilterSelect: React.FC<{
   value: string;
   onChange: (value: string) => void;
   allLabel: string;
+  allValue?: string;
   options: string[];
-}> = ({ label, value, onChange, allLabel, options }) => (
+}> = ({ label, value, onChange, allLabel, allValue = 'Tous', options }) => (
   <label className="text-[13px] font-medium text-[#475569]">
     <span className="mb-1.5 block">{label}</span>
     <select
@@ -502,7 +499,7 @@ const FilterSelect: React.FC<{
       onChange={(event) => onChange(event.target.value)}
       className="bo-input w-full"
     >
-      <option value="Tous">{allLabel}</option>
+      <option value={allValue}>{allLabel}</option>
       {options.map((option) => (
         <option key={option} value={option}>
           {option}
@@ -541,7 +538,7 @@ const OrderDetailsModal: React.FC<{ delivery: Delivery; onClose: () => void }> =
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <DetailItem label="N° BL" value={formatBlNumber(delivery.orderId)} />
             <DetailItem label="Statut" value={delivery.status} />
-            <DetailItem label="Entrepôt de départ" value={`${warehouse.name} · ${warehouse.code}`} />
+            <DetailItem label="Entrepôt de départ" value={warehouse ? `${warehouse.name} · ${warehouse.code}` : 'À renseigner'} />
             <DetailItem label="Créneau de livraison" value={delivery.timeSlot} />
             <DetailItem
               label="Valeur de la marchandise"

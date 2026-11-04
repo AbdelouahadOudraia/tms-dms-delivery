@@ -1,16 +1,26 @@
 import React, { useState } from 'react';
 import { useTms } from '../../../context/TmsContext';
 import { MetricTile, MobilePrimaryButton, MobileScreenHeader } from '../MobileUI';
+import { DriverEmptyState } from '../DriverEmptyState';
+import type { Tour } from '../../../types';
 
 export const TourCompletedScreen: React.FC = () => {
-  const { tours, deliveries, setDriverScreen } = useTms();
-  const currentTour = tours[0];
-  const [isClosed, setIsClosed] = useState(false);
+  const { currentTour: activeTour, deliveries, closeTour, setDriverScreen } = useTms();
+  const [closedTour, setClosedTour] = useState<Tour | null>(null);
+  const currentTour = closedTour || activeTour;
+  const isClosed = Boolean(closedTour);
+  const [closeError, setCloseError] = useState<string | null>(null);
+  if (!currentTour) return <DriverEmptyState />;
 
   const myDeliveries = deliveries.filter((d) => d.tourId === currentTour.id);
   const successCount = myDeliveries.filter((d) => d.status === 'Validée' || d.status === 'À valider').length;
   const failedCount = myDeliveries.filter((d) => d.status === 'Échec' || d.status === 'Rejetée').length;
   const rate = myDeliveries.length ? Math.round((successCount / myDeliveries.length) * 100) : 0;
+  const handleCloseTour = () => {
+    const result = closeTour(currentTour.id);
+    if (result.success) setClosedTour({ ...currentTour, status: 'Terminée' });
+    setCloseError(result.success ? null : result.message);
+  };
 
   return (
     <div className="flex-1 flex flex-col bg-[#EEF3F8] overflow-hidden pb-20">
@@ -23,7 +33,7 @@ export const TourCompletedScreen: React.FC = () => {
           </div>
           <div>
             <h2 className="text-xl font-bold text-[#1D2229]">Tournée clôturée</h2>
-            <p className="mt-2 text-sm text-[#5B6470]">Rapport final transmis au backoffice. Retour hub enregistré à 17:35.</p>
+            <p className="mt-2 text-sm text-[#5B6470]">La tournée est terminée. Le chauffeur et le véhicule sont disponibles.</p>
           </div>
           <MobilePrimaryButton onClick={() => setDriverScreen('home')} icon="dashboard">Retour accueil</MobilePrimaryButton>
         </div>
@@ -53,7 +63,12 @@ export const TourCompletedScreen: React.FC = () => {
             ))}
           </section>
 
-          <MobilePrimaryButton onClick={() => setIsClosed(true)} icon="flag">Clôturer ma tournée</MobilePrimaryButton>
+          {closeError && (
+            <div className="rounded-2xl border border-[#FBD9C3] bg-[#FEF4EC] p-3 text-xs font-semibold text-[#B8561B]">
+              {closeError}
+            </div>
+          )}
+          <MobilePrimaryButton onClick={handleCloseTour} icon="flag">Clôturer ma tournée</MobilePrimaryButton>
         </div>
       )}
     </div>

@@ -3,13 +3,18 @@ import { useTms } from '../../../context/TmsContext';
 import { Delivery } from '../../../types';
 import { DeliveryCompactCard, MetricTile, MobileProgressBar, MobileScreenHeader } from '../MobileUI';
 import { StatusBadge } from '../../common/StatusBadge';
+import { DriverEmptyState } from '../DriverEmptyState';
+import { getVisibleDriverTourStops } from '../../../utils/workflow';
 
 export const TourOverviewScreen: React.FC = () => {
   const { currentTour, currentDriver, deliveries, setDriverScreen, setSelectedDeliveryId } = useTms();
+  if (!currentTour) return <DriverEmptyState />;
 
   const tourDeliveries = deliveries
     .filter((d) => d.tourId === currentTour.id)
     .sort((a, b) => a.sequence - b.sequence);
+  const visibleStops = getVisibleDriverTourStops(deliveries, currentTour.id);
+  const resumedCount = tourDeliveries.length - visibleStops.length;
 
   const completedCount = tourDeliveries.filter((d) => d.status === 'Validée' || d.status === 'À valider').length;
   const failedCount = tourDeliveries.filter((d) => d.status === 'Échec' || d.status === 'Rejetée').length;
@@ -75,10 +80,17 @@ export const TourOverviewScreen: React.FC = () => {
         <div className="space-y-2.5">
           <div className="flex items-center justify-between px-1">
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#1D2229]">Ordre de passage</h3>
-            <span className="text-[11px] text-[#5B6470]">{tourDeliveries.length} arrêts</span>
+            <span className="text-[11px] text-[#5B6470]">{visibleStops.length} arrêts affichés</span>
           </div>
 
-          {tourDeliveries.map((delivery) => {
+          {resumedCount > 0 && (
+            <button type="button" onClick={() => setDriverScreen('history')}
+              className="w-full rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-2 text-left text-xs text-[#0057A8]">
+              {resumedCount === 1 ? '1 ancienne tentative reprise' : `${resumedCount} anciennes tentatives reprises`} · Voir dans Historique
+            </button>
+          )}
+
+          {visibleStops.map((delivery) => {
             const active = delivery.status === 'Livraison en cours' || delivery.status === 'Arrivé' || delivery.status === 'En route';
             return (
               <DeliveryCompactCard

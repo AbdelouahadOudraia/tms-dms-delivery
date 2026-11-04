@@ -211,14 +211,18 @@ export const ValidationScreen: React.FC = () => {
                       </div>
                       <div className="rounded-lg border border-[#DDE7F0] bg-[#F7FAFC] overflow-hidden">
                         <div className="aspect-[16/9] bg-[#E8F2FB]">
-                          <img
-                            src={
-                              currentDelivery.proof?.photoUrl ||
-                              'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=900&q=80'
-                            }
-                            alt="Preuve colis"
-                            className="w-full h-full object-cover"
-                          />
+                          {currentDelivery.proof?.photoUrl ? (
+                            <img
+                              src={currentDelivery.proof.photoUrl}
+                              alt="Preuve de livraison"
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full flex-col items-center justify-center gap-2 text-[#627286]">
+                              <span className="material-symbols-outlined text-[36px]">broken_image</span>
+                              <span className="text-xs font-semibold">Photo manquante</span>
+                            </div>
+                          )}
                         </div>
                         <div className="px-3 py-2 flex items-center justify-between text-[11px] text-[#627286]">
                           <span>Photo horodatée • GPS vérifié</span>
@@ -243,16 +247,7 @@ export const ValidationScreen: React.FC = () => {
                               className="max-h-24 max-w-full object-contain"
                             />
                           ) : (
-                            <svg className="w-48 h-20" viewBox="0 0 200 60">
-                              <path
-                                d="M 10 40 Q 30 10 50 40 T 90 25 T 130 45 T 170 30"
-                                fill="none"
-                                stroke="#0057A8"
-                                strokeWidth="2.5"
-                                strokeLinecap="round"
-                              />
-                              <line x1="15" y1="48" x2="175" y2="45" stroke="#0057A8" strokeWidth="1.5" />
-                            </svg>
+                            <span className="text-xs font-semibold text-[#C93434]">Signature manquante</span>
                           )}
                         </div>
                       </div>
@@ -331,6 +326,7 @@ export const ValidationScreen: React.FC = () => {
                 <span className="text-xs text-[#627286]">
                   Action superviseur synchronisée avec l’application chauffeur.
                 </span>
+                {currentDelivery.status === 'À valider' && (
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -347,6 +343,7 @@ export const ValidationScreen: React.FC = () => {
                     Valider la livraison
                   </button>
                 </div>
+                )}
               </div>
             </>
           ) : (

@@ -12,7 +12,7 @@ export const NavigationScreen: React.FC = () => {
   } = useTms();
 
   const delivery =
-    deliveries.find((d) => d.id === selectedDeliveryId) || deliveries[1];
+    deliveries.find((d) => d.id === selectedDeliveryId)!;
 
   const [simulatedDistance, setSimulatedDistance] = useState(2.4);
   const [speed, setSpeed] = useState(44);
@@ -27,8 +27,7 @@ export const NavigationScreen: React.FC = () => {
   }, []);
 
   const handleArrival = () => {
-    markArrived(delivery.id, '10:32');
-    setDriverScreen('arrival');
+    if (markArrived(delivery.id)) setDriverScreen('arrival');
   };
 
   return (

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState } from 'react';
 import {
   Delivery,
+  FailedDeliveryTreatment,
   Tour,
   Driver,
   Vehicle,
@@ -21,6 +22,10 @@ import {
   INITIAL_ADDRESSES,
   INITIAL_ZONES,
 } from '../data/tmsMockData';
+import { getDistrictsFromTourZone, getDeliveryWarehouse, getTourLoadError } from '../data/logisticsReference';
+import { prepareFailedDeliveryTreatment, synchronizeDeliveryStatus } from '../utils/deliveryRecovery';
+import { buildOperationalIncidents } from '../utils/operationalIncidents';
+import { canFailDelivery, canWorkDelivery, getAssignmentError, getCloseTourError, getDriverTour, getNextStop, isActiveTour, reorderRemainingStops } from '../utils/workflow';
 
 interface TmsContextType {
   // Data
@@ -33,12 +38,15 @@ interface TmsContextType {
   zones: DeliveryZone[];
   lastRouteOptimization: RouteOptimizationResult | null;
   currentDriver: Driver;
-  currentTour: Tour;
+  currentTour: Tour | undefined;
+  activeDriverId: string;
   selectedDeliveryId: string;
   activeViewMode: 'backoffice' | 'driver' | 'split';
+  workflowSettings: WorkflowSettings;
 
   // Navigation & View controls
   setActiveViewMode: (mode: 'backoffice' | 'driver' | 'split') => void;
+  setActiveDriverId: (id: string) => void;
   setSelectedDeliveryId: (id: string) => void;
   backofficeTab: string;
   setBackofficeTab: (tab: string) => void;
@@ -46,6 +54,7 @@ interface TmsContextType {
   setPlanningSelectionIds: (ids: string[]) => void;
   driverScreen: string;
   setDriverScreen: (screen: string) => void;
+  updateWorkflowSettings: (settings: WorkflowSettings) => void;
 
   // Actions
   createTour: (payload: {
@@ -58,8 +67,8 @@ interface TmsContextType {
     deliveryIds: string[];
   }) => Tour;
   dispatchTour: (tourId: string, driverId: string, vehicleId: string) => void;
-  markArrived: (deliveryId: string, time?: string) => void;
-  verifyDeliveryItems: (deliveryId: string, itemIds: string[]) => void;
+  markArrived: (deliveryId: string, time?: string) => boolean;
+  verifyDeliveryItems: (deliveryId: string, itemIds: string[]) => boolean;
   confirmDeliveryPOD: (
     deliveryId: string,
     proofData: {
@@ -68,13 +77,13 @@ interface TmsContextType {
       recipientName: string;
       driverNotes?: string;
     }
-  ) => void;
+  ) => boolean;
   failDelivery: (
     deliveryId: string,
     reason: string,
     comment: string,
     photoUrl?: string
-  ) => void;
+  ) => boolean;
   recalculateRoute: (
     deliveryId: string,
     incidentType: string,
@@ -84,6 +93,13 @@ interface TmsContextType {
   confirmDeliveryOrder: (deliveryId: string) => void;
   validateDelivery: (deliveryId: string) => void;
   rejectDelivery: (deliveryId: string, reason: string, comment: string) => void;
+  closeTour: (tourId: string) => { success: boolean; message: string };
+  resolveIncident: (incidentId: string, resolution: string) => void;
+  replanifyFailedDelivery: (
+    incidentId: string,
+    deliveryId: string,
+    payload: FailedDeliveryTreatment
+  ) => { success: boolean; message: string };
   addDriver: (driver: Omit<Driver, 'id'>) => Driver;
   addVehicle: (vehicle: Vehicle) => Vehicle;
   addAddress: (address: Omit<DeliveryAddress, 'id'>) => DeliveryAddress;
@@ -92,6 +108,24 @@ interface TmsContextType {
 }
 
 const TmsContext = createContext<TmsContextType | undefined>(undefined);
+
+export interface WorkflowSettings {
+  hubName: string;
+  requirePhoto: boolean;
+  requireSignature: boolean;
+  gpsTolerance: number;
+  delayThreshold: number;
+  autoNotifyCustomer: boolean;
+}
+
+const DEFAULT_WORKFLOW_SETTINGS: WorkflowSettings = {
+  hubName: 'Hub Central Casablanca - Ain Sebaa',
+  requirePhoto: true,
+  requireSignature: true,
+  gpsTolerance: 50,
+  delayThreshold: 15,
+  autoNotifyCustomer: true,
+};
 
 const isClosedDeliveryStatus = (status: DeliveryStatus) =>
   status === 'À valider' ||
@@ -122,19 +156,53 @@ const synchronizeTourCounters = (tours: Tour[], deliveries: Delivery[]) =>
     };
   });
 
+const normalizeDeliverySequences = (deliveries: Delivery[]) => {
+  const normalizedSequenceById = new Map<string, number>();
+  const tourIds = Array.from(
+    new Set(deliveries.map((delivery) => delivery.tourId).filter(Boolean))
+  );
+
+  tourIds.forEach((tourId) => {
+    deliveries
+      .filter((delivery) => delivery.tourId === tourId)
+      .sort((first, second) => first.sequence - second.sequence || first.id.localeCompare(second.id))
+      .forEach((delivery, index) => normalizedSequenceById.set(delivery.id, index + 1));
+  });
+
+  return deliveries.map((delivery) => ({
+    ...delivery,
+    sequence: normalizedSequenceById.get(delivery.id) ?? delivery.sequence,
+  }));
+};
+
+const NORMALIZED_INITIAL_DELIVERIES = normalizeDeliverySequences(INITIAL_DELIVERIES).map((delivery) => synchronizeDeliveryStatus({
+  ...delivery,
+  deliveryDate: delivery.deliveryDate || INITIAL_TOURS.find((tour) => tour.id === delivery.tourId)?.date,
+  warehouseId: getDeliveryWarehouse(delivery)?.id,
+}));
+
+const getCurrentTime = () =>
+  new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
 export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [deliveries, setDeliveries] = useState<Delivery[]>(INITIAL_DELIVERIES);
-  const [tours, setTours] = useState<Tour[]>(() => synchronizeTourCounters(INITIAL_TOURS, INITIAL_DELIVERIES));
+  const [deliveries, updateDeliveries] = useState<Delivery[]>(NORMALIZED_INITIAL_DELIVERIES);
+  const setDeliveries = (update: React.SetStateAction<Delivery[]>) => updateDeliveries((previous) =>
+    (typeof update === 'function' ? update(previous) : update).map(synchronizeDeliveryStatus));
+  const [tours, setTours] = useState<Tour[]>(() =>
+    synchronizeTourCounters(INITIAL_TOURS, NORMALIZED_INITIAL_DELIVERIES)
+  );
   const [drivers, setDrivers] = useState<Driver[]>(INITIAL_DRIVERS);
   const [vehicles, setVehicles] = useState<Vehicle[]>(INITIAL_VEHICLES);
   const [incidents, setIncidents] = useState<Incident[]>(INITIAL_INCIDENTS);
   const [addresses, setAddresses] = useState<DeliveryAddress[]>(INITIAL_ADDRESSES as unknown as DeliveryAddress[]);
   const [zones, setZones] = useState<DeliveryZone[]>(INITIAL_ZONES as unknown as DeliveryZone[]);
   const [lastRouteOptimization, setLastRouteOptimization] = useState<RouteOptimizationResult | null>(null);
+  const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettings>(DEFAULT_WORKFLOW_SETTINGS);
 
   // Active Driver & Tour for simulation
-  const currentDriver = drivers[0]; // Youssef El Amrani
-  const currentTour = tours.find((t) => t.id === 'TR-2026-058') || tours[0];
+  const [activeDriverId, updateActiveDriverId] = useState(INITIAL_DRIVERS[0].id);
+  const currentDriver = drivers.find((driver) => driver.id === activeDriverId) || drivers[0];
+  const currentTour = getDriverTour(tours, currentDriver);
 
   // Selected delivery for inspector/detail
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string>('CMD-45821');
@@ -147,6 +215,18 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [planningSelectionIds, setPlanningSelectionIds] = useState<string[]>([]);
   const [driverScreen, setDriverScreen] = useState<string>('home'); // login, home, deliveries, detail, arrival, items, pod, success, failed, history, profile
 
+  const setActiveDriverId = (id: string) => {
+    const driver = drivers.find((item) => item.id === id);
+    if (!driver) return;
+    updateActiveDriverId(id);
+    const tour = getDriverTour(tours, driver);
+    const stop = tour ? deliveries.filter((item) => item.tourId === tour.id && item.driverId === id)
+      .sort((a, b) => a.sequence - b.sequence).find((item) => !isClosedDeliveryStatus(item.status)) : undefined;
+    setSelectedDeliveryId(stop?.id || '');
+    setLastRouteOptimization(null);
+    setDriverScreen('home');
+  };
+
   // Backoffice creates a new tour from existing planned deliveries
   const createTour = (payload: {
     date: string;
@@ -157,22 +237,42 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     vehicleId: string;
     deliveryIds: string[];
   }) => {
-    const driver = drivers.find((d) => d.id === payload.driverId) || drivers[0];
-    const vehicle = vehicles.find((v) => v.id === payload.vehicleId) || vehicles[0];
-    const zoneDistricts = payload.zone
-      .match(/\(([^)]+)\)/)?.[1]
-      .split(',')
-      .map((district) => district.trim().toLowerCase()) || [];
+    const driver = drivers.find((d) => d.id === payload.driverId);
+    const vehicle = vehicles.find((v) => v.id === payload.vehicleId);
+    const assignmentError = getAssignmentError(tours, driver, vehicle);
+    if (assignmentError) throw new Error(assignmentError);
+    if (!driver || !vehicle) throw new Error('Ressources introuvables.');
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(payload.departureTime) ||
+      !/^([01]\d|2[0-3]):[0-5]\d$/.test(payload.estimatedEndTime) ||
+      payload.estimatedEndTime <= payload.departureTime) {
+      throw new Error('La fin estimée doit être après le départ, le même jour.');
+    }
+    if (new Set(payload.deliveryIds).size !== payload.deliveryIds.length) {
+      throw new Error('Un BL ne peut figurer qu’une seule fois dans la tournée.');
+    }
+    if (payload.deliveryIds.length === 0) {
+      throw new Error('Sélectionnez au moins un BL.');
+    }
+
+    const zoneDistricts = getDistrictsFromTourZone(payload.zone);
     const eligibleDeliveryIds = payload.deliveryIds.filter((deliveryId) => {
       const delivery = deliveries.find((item) => item.id === deliveryId);
       return (
         delivery &&
         delivery.status === 'À planifier' &&
         !delivery.tourId &&
+        !delivery.driverId &&
         delivery.deliveryDate === payload.date &&
         zoneDistricts.includes(delivery.district.toLowerCase())
       );
     });
+    if (eligibleDeliveryIds.length !== payload.deliveryIds.length) {
+      throw new Error(
+        `${payload.deliveryIds.length - eligibleDeliveryIds.length} BL ne correspondent plus à la date ou à la zone sélectionnée.`
+      );
+    }
+    const loadError = getTourLoadError(deliveries.filter((item) => eligibleDeliveryIds.includes(item.id)), vehicle, payload.zone);
+    if (loadError) throw new Error(loadError);
     const nextNumber =
       Math.max(
         ...tours
@@ -213,6 +313,20 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       })
     );
+    setDrivers((prev) =>
+      prev.map((item) =>
+        item.id === driver.id
+          ? { ...item, status: 'En tournée', currentTourId: newTour.id }
+          : item
+      )
+    );
+    setVehicles((prev) =>
+      prev.map((item) =>
+        item.id === vehicle.id
+          ? { ...item, status: 'En service', assignedDriverId: driver.id }
+          : item
+      )
+    );
 
     return newTour;
   };
@@ -221,6 +335,13 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const dispatchTour = (tourId: string, driverId: string, vehicleId: string) => {
     const driver = drivers.find((d) => d.id === driverId);
     const vehicle = vehicles.find((v) => v.id === vehicleId);
+    const targetTour = tours.find((tour) => tour.id === tourId);
+    const assignmentError = getAssignmentError(tours, driver, vehicle, tourId);
+    if (assignmentError) throw new Error(assignmentError);
+    if (!driver || !vehicle || !targetTour) throw new Error('Tournée ou ressources introuvables.');
+
+    const loadError = getTourLoadError(deliveries.filter((item) => item.tourId === tourId && !isClosedDeliveryStatus(item.status)), vehicle);
+    if (loadError) throw new Error(loadError);
 
     setTours((prev) =>
       prev.map((t) => {
@@ -233,7 +354,6 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             vehicleId,
             vehicleModel: vehicle ? vehicle.model : t.vehicleModel,
             status: 'En cours',
-            departureTime: '08:30',
           };
         }
         return t;
@@ -243,10 +363,13 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Update tour's deliveries status to 'Affectée' or 'En route'
     setDeliveries((prev) =>
       prev.map((d) => {
-        if (d.tourId === tourId && (d.status === 'À planifier' || d.status === 'Planifiée')) {
+        if (d.tourId === tourId && !isClosedDeliveryStatus(d.status)) {
           return {
             ...d,
-            status: 'Affectée',
+            status:
+              d.status === 'À planifier' || d.status === 'Planifiée'
+                ? ('Affectée' as DeliveryStatus)
+                : d.status,
             driverId,
             driverName: driver ? driver.name : d.driverName,
             vehicleId,
@@ -255,13 +378,33 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return d;
       })
     );
+    setDrivers((prev) =>
+      prev.map((item) =>
+        item.id === targetTour?.driverId && item.id !== driverId
+          ? { ...item, status: 'Disponible', currentTourId: undefined }
+          : item.id === driverId
+          ? { ...item, status: 'En tournée', currentTourId: tourId }
+          : item
+      )
+    );
+    setVehicles((prev) =>
+      prev.map((item) =>
+        item.id === targetTour?.vehicleId && item.id !== vehicleId
+          ? { ...item, status: 'Disponible', assignedDriverId: undefined }
+          : item.id === vehicleId
+          ? { ...item, status: 'En service', assignedDriverId: driverId }
+          : item
+      )
+    );
   };
 
   // Driver marks "Je suis arrivé"
-  const markArrived = (deliveryId: string, time: string = '10:32') => {
+  const markArrived = (deliveryId: string, time: string = getCurrentTime()) => {
+    const target = deliveries.find((delivery) => delivery.id === deliveryId);
+    if (!canWorkDelivery(target, activeDriverId, tours) || !target || !['En route', 'Affectée'].includes(target.status)) return false;
     setDeliveries((prev) =>
       prev.map((d) => {
-        if (d.id === deliveryId) {
+        if (d.id === deliveryId && (d.status === 'En route' || d.status === 'Affectée')) {
           return {
             ...d,
             arrivalTime: time,
@@ -271,16 +414,23 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return d;
       })
     );
+    return true;
   };
 
   // Driver verifies items
   const verifyDeliveryItems = (deliveryId: string, itemIds: string[]) => {
+    const target = deliveries.find((delivery) => delivery.id === deliveryId);
+    if (!canWorkDelivery(target, activeDriverId, tours) || !target ||
+      !['Arrivé', 'Livraison en cours', 'Rejetée'].includes(target.status) || !target.items.length ||
+      !target.items.every((item) => itemIds.includes(item.id))) return false;
     setDeliveries((prev) =>
       prev.map((d) => {
-        if (d.id === deliveryId) {
+        const everyItemChecked =
+          d.items.length > 0 && d.items.every((item) => itemIds.includes(item.id));
+        if (d.id === deliveryId && ['Arrivé', 'Livraison en cours', 'Rejetée'].includes(d.status) && everyItemChecked) {
           return {
             ...d,
-            status: 'Livraison en cours' as DeliveryStatus,
+            status: d.status === 'Rejetée' ? 'Rejetée' : 'Livraison en cours' as DeliveryStatus,
             items: d.items.map((it) => ({
               ...it,
               checked: itemIds.includes(it.id),
@@ -290,6 +440,7 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return d;
       })
     );
+    return true;
   };
 
   // Driver submits Proof of Delivery (e-POD) -> status becomes "À valider"
@@ -302,32 +453,33 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       driverNotes?: string;
     }
   ) => {
-    const now = '10:42';
+    const now = getCurrentTime();
     const submittedDelivery = deliveries.find((d) => d.id === deliveryId);
-    const nextDelivery = submittedDelivery
-      ? deliveries
-          .filter(
-            (d) =>
-              d.tourId === submittedDelivery.tourId &&
-              d.sequence > submittedDelivery.sequence &&
-              (d.status === 'Affectée' || d.status === 'Planifiée' || d.status === 'À planifier')
-          )
-          .sort((a, b) => a.sequence - b.sequence)[0]
-      : undefined;
+    const canSubmit =
+      submittedDelivery &&
+      canWorkDelivery(submittedDelivery, activeDriverId, tours) &&
+      (submittedDelivery.status === 'Livraison en cours' || submittedDelivery.status === 'Rejetée') &&
+      submittedDelivery.items.length > 0 && submittedDelivery.items.every((item) => item.checked) &&
+      (!workflowSettings.requirePhoto || Boolean(proofData.photoUrl.trim())) &&
+      (!workflowSettings.requireSignature || Boolean(proofData.signatureData)) &&
+      Boolean(proofData.recipientName.trim());
+    if (!canSubmit) return false;
+    const isRejectedProofCorrection = submittedDelivery.status === 'Rejetée';
+    const nextDelivery = isRejectedProofCorrection ? undefined : getNextStop(deliveries, submittedDelivery);
 
     setDeliveries((prev) =>
       prev.map((d) => {
         if (d.id === deliveryId) {
           const newProof: ProofOfDelivery = {
             photoUrl: proofData.photoUrl,
-            photoTimestamp: '10:38:14',
-            hasSignature: true,
+            photoTimestamp: `${now}:00`,
+            hasSignature: Boolean(proofData.signatureData),
             signatureData: proofData.signatureData,
-            signatureTimestamp: '10:40:00',
-            recipientName: proofData.recipientName || d.customerName,
+            signatureTimestamp: `${now}:00`,
+            recipientName: proofData.recipientName.trim(),
             driverNotes: proofData.driverNotes,
             gpsCoordinates: d.coordinates,
-            gpsAccuracy: '± 8 m (Conforme)',
+            gpsAccuracy: `± 8 m (tolérance ${workflowSettings.gpsTolerance} m)`,
             timestamp: `${now}:00`,
           };
           return {
@@ -346,6 +498,23 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return d;
       })
     );
+
+    if (isRejectedProofCorrection) {
+      setIncidents((prev) =>
+        prev.map((incident) =>
+          incident.deliveryId === deliveryId &&
+          incident.type === 'Preuve rejetée par le backoffice' &&
+          !incident.resolved
+            ? {
+                ...incident,
+                resolved: true,
+                status: 'Résolu',
+                description: `${incident.description} · Preuve corrigée et renvoyée par le chauffeur à ${now}.`,
+              }
+            : incident
+        )
+      );
+    }
 
     // Update tour counters
     setTours((prev) =>
@@ -369,6 +538,7 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return t;
       })
     );
+    return true;
   };
 
   // Driver fails delivery
@@ -378,9 +548,16 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     comment: string,
     photoUrl?: string
   ) => {
+    const target = deliveries.find((d) => d.id === deliveryId);
+    if (!target || !canWorkDelivery(target, activeDriverId, tours) || !canFailDelivery(target) || !reason.trim()) return false;
+    const nextDelivery = getNextStop(deliveries, target);
+
     setDeliveries((prev) =>
       prev.map((d) => {
-        if (d.id === deliveryId) {
+        if (
+          d.id === deliveryId &&
+          ['En route', 'Affectée', 'Arrivé', 'Livraison en cours'].includes(d.status)
+        ) {
           return {
             ...d,
             status: 'Échec' as DeliveryStatus,
@@ -388,6 +565,9 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             failureComment: comment,
             failurePhotoUrl: photoUrl,
           };
+        }
+        if (nextDelivery && d.id === nextDelivery.id) {
+          return { ...d, status: 'En route' as DeliveryStatus };
         }
         return d;
       })
@@ -413,21 +593,21 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     // Add incident
-    const target = deliveries.find((d) => d.id === deliveryId);
     if (target) {
       const newInc: Incident = {
-        id: `INC-${Date.now().toString().slice(-4)}`,
+        id: `INC-${crypto.randomUUID()}`,
         deliveryId: target.id,
         tourId: target.tourId,
         customerName: target.customerName,
         driverName: target.driverName,
         type: reason,
         description: comment || `Échec déclaré : ${reason}`,
-        timestamp: '10:45',
+        timestamp: getCurrentTime(),
         resolved: false,
       };
       setIncidents((prev) => [newInc, ...prev]);
     }
+    return true;
   };
 
 
@@ -440,22 +620,15 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     comment: string = ''
   ) => {
     const target = deliveries.find((d) => d.id === deliveryId);
-    if (!target) return null;
+    if (!target || !canWorkDelivery(target, activeDriverId, tours) || !canFailDelivery(target)) return null;
 
-    const remainingStops = deliveries
-      .filter(
-        (d) =>
-          d.tourId === target.tourId &&
-          d.sequence > target.sequence &&
-          (d.status === 'Affectée' || d.status === 'Planifiée' || d.status === 'À planifier' || d.status === 'En route')
-      )
-      .sort((a, b) => a.sequence - b.sequence);
+    const remainingStops = reorderRemainingStops(deliveries, target);
 
-    const incidentId = `INC-${Date.now().toString().slice(-5)}`;
+    const incidentId = `INC-${crypto.randomUUID()}`;
     const optimization: RouteOptimizationResult = {
       deliveryId,
       incidentId,
-      reorderedStops: Math.min(remainingStops.length, 3),
+      reorderedStops: remainingStops.length,
       newEta: '13:42',
       remainingDistance: '18,4 km',
       message: 'Tournée recalculée',
@@ -469,18 +642,13 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       driverName: target.driverName,
       type: incidentType,
       description: comment || reason,
-      timestamp: '10:46',
+      timestamp: getCurrentTime(),
       resolved: false,
       status: 'Nouveau',
       severity: incidentType === 'Refus client' ? 'Bloquant' : 'Information',
     };
 
     setDeliveries((prev) => {
-      const orderedRemainingIds = remainingStops
-        .slice()
-        .sort((a, b) => a.district.localeCompare(b.district))
-        .map((d) => d.id);
-
       return prev.map((delivery) => {
         if (delivery.id === deliveryId) {
           return {
@@ -493,17 +661,7 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
         }
 
-        const newIndex = orderedRemainingIds.indexOf(delivery.id);
-        if (newIndex !== -1) {
-          return {
-            ...delivery,
-            sequence: target.sequence + newIndex,
-            status: newIndex === 0 ? ('En route' as DeliveryStatus) : delivery.status,
-            deliveryStatus: newIndex === 0 ? 'En cours' : 'À livrer',
-          };
-        }
-
-        return delivery;
+        return remainingStops.find((stop) => stop.id === delivery.id) || delivery;
       });
     });
 
@@ -531,7 +689,7 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const confirmDeliveryOrder = (deliveryId: string) => {
     setDeliveries((prev) =>
       prev.map((delivery) => {
-        if (delivery.id !== deliveryId || delivery.status !== 'À confirmer') return delivery;
+        if (delivery.id !== deliveryId || delivery.status !== 'À confirmer' || delivery.tourId || delivery.driverId) return delivery;
 
         return {
           ...delivery,
@@ -550,14 +708,14 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const validateDelivery = (deliveryId: string) => {
     setDeliveries((prev) =>
       prev.map((d) => {
-        if (d.id === deliveryId) {
+        if (d.id === deliveryId && d.status === 'À valider' && d.proof) {
           return {
             ...d,
             status: 'Validée' as DeliveryStatus,
             proof: d.proof
               ? {
                   ...d.proof,
-                  validationTimestamp: '10:46:12',
+                  validationTimestamp: new Date().toISOString(),
                   validatedBy: 'Karim Dispatcher (Superviseur)',
                 }
               : undefined,
@@ -570,9 +728,17 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Backoffice rejects delivery -> status becomes "Rejetée"
   const rejectDelivery = (deliveryId: string, reason: string, comment: string) => {
+    const target = deliveries.find((delivery) => delivery.id === deliveryId);
+    if (!target || target.status !== 'À valider' || !target.proof || !reason.trim()) return;
+    setIncidents((prev) => [{
+      id: `INC-${crypto.randomUUID()}`, deliveryId: target.id, tourId: target.tourId,
+      customerName: target.customerName, driverName: target.driverName,
+      type: 'Preuve rejetée par le backoffice', description: `${reason} : ${comment}`,
+      timestamp: getCurrentTime(), resolved: false, status: 'Nouveau', severity: 'Bloquant',
+    }, ...prev]);
     setDeliveries((prev) =>
       prev.map((d) => {
-        if (d.id === deliveryId) {
+        if (d.id === deliveryId && d.status === 'À valider' && d.proof) {
           return {
             ...d,
             status: 'Rejetée' as DeliveryStatus,
@@ -581,7 +747,7 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   ...d.proof,
                   rejectionReason: reason,
                   rejectionComment: comment,
-                  validationTimestamp: '10:46:12',
+                  validationTimestamp: new Date().toISOString(),
                   validatedBy: 'Karim Dispatcher (Superviseur)',
                 }
               : undefined,
@@ -590,6 +756,61 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return d;
       })
     );
+  };
+
+  const closeTour = (tourId: string) => {
+    const tour = tours.find((item) => item.id === tourId);
+    const error = getCloseTourError(tour, deliveries);
+    if (error || !tour) return { success: false, message: error || 'Tournée introuvable.' };
+
+    setTours((prev) =>
+      prev.map((item) => (item.id === tourId ? { ...item, status: 'Terminée' } : item))
+    );
+    setDrivers((prev) =>
+      prev.map((item) =>
+        item.id === tour.driverId && !tours.some((other) => other.id !== tourId && isActiveTour(other) && other.driverId === item.id)
+          ? { ...item, status: 'Disponible', currentTourId: undefined }
+          : item
+      )
+    );
+    setVehicles((prev) =>
+      prev.map((item) =>
+        item.id === tour.vehicleId && !tours.some((other) => other.id !== tourId && isActiveTour(other) && other.vehicleId === item.id)
+          ? { ...item, status: 'Disponible', assignedDriverId: undefined }
+          : item
+      )
+    );
+    return { success: true, message: `Tournée ${tourId} clôturée.` };
+  };
+
+  const resolveIncident = (incidentId: string, resolution: string) => {
+    const target = buildOperationalIncidents(incidents, deliveries).find((incident) => incident.id === incidentId);
+    if (!target || target.resolved || !resolution.trim()) return;
+    setIncidents((prev) =>
+      (prev.some((incident) => incident.id === incidentId) ? prev : [target, ...prev]).map((incident) =>
+        incident.id === incidentId
+          ? {
+              ...incident,
+              resolved: true,
+              status: 'Résolu',
+              description: `${incident.description} · Résolution : ${resolution}`,
+            }
+          : incident
+      )
+    );
+  };
+
+  const replanifyFailedDelivery = (
+    incidentId: string, deliveryId: string, payload: FailedDeliveryTreatment
+  ) => {
+    const incident = buildOperationalIncidents(incidents, deliveries).find((item) => item.id === incidentId);
+    const result = prepareFailedDeliveryTreatment(deliveries, incident, deliveryId, payload, new Date().toISOString());
+    if (!result.success) return result;
+    setDeliveries(result.deliveries);
+    setIncidents((previous) => previous.some((item) => item.id === incidentId)
+      ? previous.map((item) => item.id === incidentId ? result.incident : item)
+      : [result.incident, ...previous]);
+    return { success: true, message: result.message };
   };
 
   const addDriver = (payload: Omit<Driver, 'id'>) => {
@@ -626,14 +847,17 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Reset demo
   const resetDemoData = () => {
-    setDeliveries(INITIAL_DELIVERIES);
-    setTours(synchronizeTourCounters(INITIAL_TOURS, INITIAL_DELIVERIES));
+    setDeliveries(NORMALIZED_INITIAL_DELIVERIES);
+    setTours(synchronizeTourCounters(INITIAL_TOURS, NORMALIZED_INITIAL_DELIVERIES));
     setIncidents(INITIAL_INCIDENTS);
     setDrivers(INITIAL_DRIVERS);
     setVehicles(INITIAL_VEHICLES);
     setAddresses(INITIAL_ADDRESSES as unknown as DeliveryAddress[]);
     setZones(INITIAL_ZONES as unknown as DeliveryZone[]);
     setLastRouteOptimization(null);
+    setWorkflowSettings(DEFAULT_WORKFLOW_SETTINGS);
+    updateActiveDriverId(INITIAL_DRIVERS[0].id);
+    setDriverScreen('home');
     setSelectedDeliveryId('CMD-45821');
     setPlanningSelectionIds([]);
   };
@@ -651,9 +875,12 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         lastRouteOptimization,
         currentDriver,
         currentTour,
+        activeDriverId,
         selectedDeliveryId,
         activeViewMode,
+        workflowSettings,
         setActiveViewMode,
+        setActiveDriverId,
         setSelectedDeliveryId,
         backofficeTab,
         setBackofficeTab,
@@ -661,6 +888,7 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setPlanningSelectionIds,
         driverScreen,
         setDriverScreen,
+        updateWorkflowSettings: setWorkflowSettings,
         createTour,
         dispatchTour,
         markArrived,
@@ -671,6 +899,9 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         confirmDeliveryOrder,
         validateDelivery,
         rejectDelivery,
+        closeTour,
+        resolveIncident,
+        replanifyFailedDelivery,
         addDriver,
         addVehicle,
         addAddress,

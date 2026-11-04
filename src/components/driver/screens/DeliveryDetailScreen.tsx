@@ -2,32 +2,41 @@ import React, { useState } from 'react';
 import { useTms } from '../../../context/TmsContext';
 import { StatusBadge } from '../../common/StatusBadge';
 import { MobilePrimaryButton, MobileScreenHeader, MobileSecondaryButton } from '../MobileUI';
+import { PodRejectionNotice } from '../PodRejectionNotice';
+import { getNextStop } from '../../../utils/workflow';
 
 type CallStep = 'closed' | 'calling' | 'no-answer' | 'refusal' | 'result';
 
 export const DeliveryDetailScreen: React.FC = () => {
-  const { deliveries, selectedDeliveryId, markArrived, setDriverScreen, recalculateRoute, setBackofficeTab } = useTms();
+  const { deliveries, selectedDeliveryId, setSelectedDeliveryId, markArrived, driverScreen, setDriverScreen, recalculateRoute, setBackofficeTab } = useTms();
   const [callStep, setCallStep] = useState<CallStep>('closed');
   const [reason, setReason] = useState('Ne répond pas');
   const [comment, setComment] = useState('');
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [optimizationSummary, setOptimizationSummary] = useState<string | null>(null);
+  const [recalculationError, setRecalculationError] = useState('');
 
-  const delivery = deliveries.find((d) => d.id === selectedDeliveryId) || deliveries[1];
+  const delivery = deliveries.find((d) => d.id === selectedDeliveryId)!;
+  const nextAttempt = deliveries.find((item) => item.id === delivery.nextAttemptId);
+  const canArrive = ['Affectée', 'En route'].includes(delivery.status);
+  const canReport = ['Affectée', 'En route', 'Arrivé', 'Livraison en cours'].includes(delivery.status);
 
   const handleArrived = () => {
-    markArrived(delivery.id, '10:32');
-    setDriverScreen('arrival');
+    if (markArrived(delivery.id)) setDriverScreen('arrival');
   };
 
   const handleConfirmRecalculation = (type: 'Client injoignable' | 'Refus client') => {
     setIsOptimizing(true);
     const result = recalculateRoute(delivery.id, type, reason, comment);
-    window.setTimeout(() => {
-      setIsOptimizing(false);
-      setOptimizationSummary(result ? `${result.reorderedStops} arrêts réordonnés • ETA ${result.newEta} • ${result.remainingDistance}` : 'Tournée recalculée');
-      setCallStep('result');
-    }, 800);
+    setIsOptimizing(false);
+    if (!result) {
+      setRecalculationError('Le recalcul est indisponible pour cette livraison.');
+      setCallStep('closed');
+      return;
+    }
+    setRecalculationError('');
+    setOptimizationSummary(`${result.reorderedStops} arrêts réordonnés • ETA ${result.newEta} • ${result.remainingDistance}`);
+    setCallStep('result');
   };
 
   const closeSheet = () => {
@@ -43,11 +52,19 @@ export const DeliveryDetailScreen: React.FC = () => {
       <MobileScreenHeader
         title="Détail livraison"
         subtitle={delivery.orderId}
-        onBack={() => setDriverScreen('deliveries')}
+        onBack={() => setDriverScreen(driverScreen === 'history-detail' ? 'history' : 'deliveries')}
         right={<StatusBadge status={delivery.status} size="sm" />}
       />
 
       <div className="flex-1 overflow-y-auto scrollbar-soft p-4 space-y-4">
+        {nextAttempt && <div className="rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] p-3 text-xs text-[#0057A8]">Cette tentative est conservée dans l’historique. Une nouvelle livraison est prévue le {nextAttempt.deliveryDate}, de {nextAttempt.timeSlot} ({nextAttempt.status}).</div>}
+        {recalculationError && <p role="alert" className="text-xs text-[#7F1D1D]">{recalculationError}</p>}
+        {delivery.status === 'Rejetée' && (
+          <PodRejectionNotice
+            reason={delivery.proof?.rejectionReason}
+            comment={delivery.proof?.rejectionComment}
+          />
+        )}
         <section className="rounded-3xl border border-[#DDE7F0] bg-white p-4 shadow-sm shadow-slate-200/70">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -111,14 +128,16 @@ export const DeliveryDetailScreen: React.FC = () => {
 
       <div className="shrink-0 border-t border-[#DDE7F0] bg-white p-4 space-y-2">
         <div className="grid grid-cols-2 gap-2">
-          <button onClick={() => setCallStep('calling')} className="min-h-[44px] rounded-xl border border-[#DDE7F0] bg-white text-xs font-bold text-[#1D2229] flex items-center justify-center gap-2">
+          <button disabled={!canReport} onClick={() => setCallStep('calling')} className="min-h-[44px] rounded-xl border border-[#DDE7F0] bg-white text-xs font-bold text-[#1D2229] flex items-center justify-center gap-2 disabled:opacity-50">
             <span className="material-symbols-outlined text-[18px] text-[#0057A8]">call</span>
             Appeler
           </button>
           <MobileSecondaryButton onClick={() => setDriverScreen('navigation')} icon="navigation">GPS</MobileSecondaryButton>
         </div>
-        <MobilePrimaryButton onClick={handleArrived} icon="where_to_vote">Je suis arrivé</MobilePrimaryButton>
-        <button onClick={() => setDriverScreen('failed')} className="w-full py-1.5 text-center text-xs font-bold text-[#7F1D1D]">Signaler un problème ou absence client</button>
+        {canArrive && <MobilePrimaryButton onClick={handleArrived} icon="where_to_vote">Je suis arrivé</MobilePrimaryButton>}
+        {delivery.status === 'Arrivé' && <MobilePrimaryButton onClick={() => setDriverScreen('items')} icon="fact_check">Contrôler les colis</MobilePrimaryButton>}
+        {['Livraison en cours', 'Rejetée'].includes(delivery.status) && <MobilePrimaryButton onClick={() => setDriverScreen(delivery.items.every((item) => item.checked) ? 'pod' : 'items')} icon="draw">{delivery.status === 'Rejetée' ? 'Corriger la preuve rejetée' : 'Compléter la preuve de livraison'}</MobilePrimaryButton>}
+        {canReport && <button onClick={() => setDriverScreen('failed')} className="w-full py-1.5 text-center text-xs font-bold text-[#7F1D1D]">Signaler un problème ou absence client</button>}
       </div>
 
       {callStep !== 'closed' && (
@@ -176,7 +195,12 @@ export const DeliveryDetailScreen: React.FC = () => {
                   <p className="mt-1 text-xs text-[#5B6470]">{optimizationSummary}</p>
                   <p className="mt-1 text-xs font-semibold text-[#E8722C]">Incident créé dans le backoffice</p>
                 </div>
-                <button onClick={() => { closeSheet(); setDriverScreen('navigation'); }} className="h-12 w-full rounded-xl bg-[#0057A8] text-sm font-bold text-white">Voir le nouvel itinéraire</button>
+                <button onClick={() => {
+                  const next = getNextStop(deliveries, delivery);
+                  closeSheet();
+                  if (next) { setSelectedDeliveryId(next.id); setDriverScreen('navigation'); }
+                  else setDriverScreen('completed');
+                }} className="h-12 w-full rounded-xl bg-[#0057A8] text-sm font-bold text-white">Voir la suite de la tournée</button>
                 <button onClick={() => { setBackofficeTab('incidents'); closeSheet(); }} className="w-full text-xs font-bold text-[#0057A8]">Voir l’incident côté backoffice</button>
               </div>
             )}

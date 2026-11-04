@@ -25,21 +25,21 @@ export const ProfileScreen: React.FC = () => {
           </div>
           <div className="p-4 text-xs space-y-2">
             <div className="flex justify-between"><span className="text-[#5B6470]">Téléphone</span><span className="font-mono font-bold text-[#0057A8]">{currentDriver.phone}</span></div>
-            <div className="flex justify-between"><span className="text-[#5B6470]">Tournée active</span><span className="font-mono font-bold text-[#1D2229]">{currentTour.id}</span></div>
+            <div className="flex justify-between"><span className="text-[#5B6470]">Tournée active</span><span className="font-mono font-bold text-[#1D2229]">{currentTour?.id || 'Aucune'}</span></div>
           </div>
         </section>
 
         <section className="rounded-3xl border border-[#DDE7F0] bg-white p-4 shadow-sm shadow-slate-200/70 space-y-3">
           <h3 className="text-xs font-bold uppercase tracking-wider text-[#5B6470]">Véhicule & terminal</h3>
           <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="rounded-2xl border border-[#DDE7F0] bg-[#F7FAFC] p-3"><span className="block text-[10px] text-[#5B6470]">Immatriculation</span><span className="font-mono font-bold text-[#0057A8]">{currentTour.vehicleId}</span></div>
-            <div className="rounded-2xl border border-[#DDE7F0] bg-[#F7FAFC] p-3"><span className="block text-[10px] text-[#5B6470]">Modèle</span><span className="font-bold text-[#1D2229]">{currentTour.vehicleModel}</span></div>
+            <div className="rounded-2xl border border-[#DDE7F0] bg-[#F7FAFC] p-3"><span className="block text-[10px] text-[#5B6470]">Immatriculation</span><span className="font-mono font-bold text-[#0057A8]">{currentTour?.vehicleId || 'Non affecté'}</span></div>
+            <div className="rounded-2xl border border-[#DDE7F0] bg-[#F7FAFC] p-3"><span className="block text-[10px] text-[#5B6470]">Modèle</span><span className="font-bold text-[#1D2229]">{currentTour?.vehicleModel || 'Non affecté'}</span></div>
             <div className="rounded-2xl border border-[#BEE3CE] bg-[#EAF5EE] p-3"><span className="block text-[10px] text-[#5B6470]">GPS</span><span className="font-bold text-[#176B3A]">±5m</span></div>
             <div className="rounded-2xl border border-[#BCD6ED] bg-[#E8F2FB] p-3"><span className="block text-[10px] text-[#5B6470]">Batterie</span><span className="font-mono font-bold text-[#0057A8]">89%</span></div>
           </div>
         </section>
 
-        <MobilePrimaryButton onClick={() => setDriverScreen('completed')} icon="flag">Clôturer ma tournée</MobilePrimaryButton>
+        <MobilePrimaryButton disabled={!currentTour} onClick={() => setDriverScreen('completed')} icon="flag">Clôturer ma tournée</MobilePrimaryButton>
         <MobileSecondaryButton onClick={() => setDriverScreen('login')} icon="logout">Déconnexion</MobileSecondaryButton>
       </div>
     </div>
