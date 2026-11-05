@@ -1,3 +1,5 @@
+import { useCompanySpace } from './CompanySpace';
+import { useTransportSave } from '../hooks/useTransportSave';
 import React, { createContext, useContext, useState } from 'react';
 import {
   Delivery,
@@ -26,6 +28,7 @@ import { getDistrictsFromTourZone, getDeliveryWarehouse, getTourLoadError } from
 import { prepareFailedDeliveryTreatment, synchronizeDeliveryStatus } from '../utils/deliveryRecovery';
 import { buildOperationalIncidents } from '../utils/operationalIncidents';
 import { canFailDelivery, canWorkDelivery, getAssignmentError, getCloseTourError, getDriverTour, getNextStop, isActiveTour, reorderRemainingStops } from '../utils/workflow';
+import { useSalesWorkflow, type SalesWorkflow } from '../hooks/useSalesWorkflow';
 
 interface TmsContextType {
   // Data
@@ -43,6 +46,7 @@ interface TmsContextType {
   selectedDeliveryId: string;
   activeViewMode: 'backoffice' | 'driver' | 'split';
   workflowSettings: WorkflowSettings;
+  sales: SalesWorkflow;
 
   // Navigation & View controls
   setActiveViewMode: (mode: 'backoffice' | 'driver' | 'split') => void;
@@ -185,33 +189,43 @@ const getCurrentTime = () =>
   new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
 export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [deliveries, updateDeliveries] = useState<Delivery[]>(NORMALIZED_INITIAL_DELIVERIES);
+  const { company, initial } = useCompanySpace();
+  const seed = company.demo;
+  const stored = initial.data;
+  const [deliveries, updateDeliveries] = useState<Delivery[]>(stored?.deliveries ?? (seed ? NORMALIZED_INITIAL_DELIVERIES : []));
   const setDeliveries = (update: React.SetStateAction<Delivery[]>) => updateDeliveries((previous) =>
     (typeof update === 'function' ? update(previous) : update).map(synchronizeDeliveryStatus));
   const [tours, setTours] = useState<Tour[]>(() =>
-    synchronizeTourCounters(INITIAL_TOURS, NORMALIZED_INITIAL_DELIVERIES)
+    stored?.tours ?? (seed ? synchronizeTourCounters(INITIAL_TOURS, NORMALIZED_INITIAL_DELIVERIES) : [])
   );
-  const [drivers, setDrivers] = useState<Driver[]>(INITIAL_DRIVERS);
-  const [vehicles, setVehicles] = useState<Vehicle[]>(INITIAL_VEHICLES);
-  const [incidents, setIncidents] = useState<Incident[]>(INITIAL_INCIDENTS);
-  const [addresses, setAddresses] = useState<DeliveryAddress[]>(INITIAL_ADDRESSES as unknown as DeliveryAddress[]);
-  const [zones, setZones] = useState<DeliveryZone[]>(INITIAL_ZONES as unknown as DeliveryZone[]);
+  const [drivers, setDrivers] = useState<Driver[]>(stored?.drivers ?? (seed ? INITIAL_DRIVERS : []));
+  const [vehicles, setVehicles] = useState<Vehicle[]>(stored?.vehicles ?? (seed ? INITIAL_VEHICLES : []));
+  const [incidents, setIncidents] = useState<Incident[]>(stored?.incidents ?? (seed ? INITIAL_INCIDENTS : []));
+  const [addresses, setAddresses] = useState<DeliveryAddress[]>(stored?.addresses ?? (seed ? INITIAL_ADDRESSES as unknown as DeliveryAddress[] : []));
+  const [zones, setZones] = useState<DeliveryZone[]>(stored?.zones ?? (seed ? INITIAL_ZONES as unknown as DeliveryZone[] : []));
   const [lastRouteOptimization, setLastRouteOptimization] = useState<RouteOptimizationResult | null>(null);
-  const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettings>(DEFAULT_WORKFLOW_SETTINGS);
+  const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettings>(stored?.workflowSettings ?? { ...DEFAULT_WORKFLOW_SETTINGS, hubName: seed ? DEFAULT_WORKFLOW_SETTINGS.hubName : company.name });
+  const transport = React.useMemo(() => ({ deliveries, tours, drivers, vehicles, incidents, addresses, zones, workflowSettings }),
+    [deliveries, tours, drivers, vehicles, incidents, addresses, zones, workflowSettings]);
+  useTransportSave(transport);
+  const sales = useSalesWorkflow(deliveries, (bls) => setDeliveries((previous) => {
+    const known = new Set(previous.map((delivery) => delivery.id));
+    return [...bls.filter((delivery) => !known.has(delivery.id)), ...previous];
+  }));
 
   // Active Driver & Tour for simulation
-  const [activeDriverId, updateActiveDriverId] = useState(INITIAL_DRIVERS[0].id);
+  const [activeDriverId, updateActiveDriverId] = useState(drivers[0]?.id || '');
   const currentDriver = drivers.find((driver) => driver.id === activeDriverId) || drivers[0];
-  const currentTour = getDriverTour(tours, currentDriver);
+  const currentTour = currentDriver ? getDriverTour(tours, currentDriver) : undefined;
 
   // Selected delivery for inspector/detail
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<string>('CMD-45821');
 
   // Navigation view mode
   const [activeViewMode, setActiveViewMode] = useState<'backoffice' | 'driver' | 'split'>(
-    'split'
+    'backoffice'
   );
-  const [backofficeTab, setBackofficeTab] = useState<string>('dashboard');
+  const [backofficeTab, setBackofficeTab] = useState<string>('sales');
   const [planningSelectionIds, setPlanningSelectionIds] = useState<string[]>([]);
   const [driverScreen, setDriverScreen] = useState<string>('home'); // login, home, deliveries, detail, arrival, items, pod, success, failed, history, profile
 
@@ -847,7 +861,10 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Reset demo
   const resetDemoData = () => {
-    setDeliveries(NORMALIZED_INITIAL_DELIVERIES);
+    if (!seed) return;
+    sales.setSelectionIds([]);
+    if (backofficeTab === 'sales' || backofficeTab === 'sales-generate') setBackofficeTab('orders');
+    setDeliveries([...NORMALIZED_INITIAL_DELIVERIES, ...sales.generatedBls]);
     setTours(synchronizeTourCounters(INITIAL_TOURS, NORMALIZED_INITIAL_DELIVERIES));
     setIncidents(INITIAL_INCIDENTS);
     setDrivers(INITIAL_DRIVERS);
@@ -879,6 +896,7 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         selectedDeliveryId,
         activeViewMode,
         workflowSettings,
+        sales,
         setActiveViewMode,
         setActiveDriverId,
         setSelectedDeliveryId,

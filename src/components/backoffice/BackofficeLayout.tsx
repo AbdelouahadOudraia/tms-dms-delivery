@@ -1,3 +1,4 @@
+import { useCompanySpace } from '../../context/CompanySpace';
 import React from 'react';
 import { useTms } from '../../context/TmsContext';
 import { DashboardScreen } from './DashboardScreen';
@@ -15,6 +16,9 @@ import { PlanningScreen } from './PlanningScreen';
 import { ProvidersScreen } from './ProvidersScreen';
 import { countOpenOperationalIncidents } from '../../utils/operationalIncidents';
 
+const SalesScreen = React.lazy(() => import('./SalesScreen').then((module) => ({ default: module.SalesScreen })));
+const SalesGenerationScreen = React.lazy(() => import('./SalesGenerationScreen').then((module) => ({ default: module.SalesGenerationScreen })));
+
 const navSections = [
   {
     title: 'Pilotage',
@@ -26,6 +30,7 @@ const navSections = [
   {
     title: 'Transport',
     items: [
+      { id: 'sales', label: 'Dossiers de vente', icon: 'folder_open' },
       { id: 'orders', label: 'Ordres de livraison', icon: 'receipt_long' },
       { id: 'planning', label: 'Planification', icon: 'event_note' },
       { id: 'tours', label: 'Tournées', icon: 'alt_route' },
@@ -61,7 +66,8 @@ const navSections = [
 ];
 
 export const BackofficeLayout: React.FC = () => {
-  const { backofficeTab, setBackofficeTab, deliveries, incidents } = useTms();
+  const { company, admin } = useCompanySpace();
+  const { backofficeTab, setBackofficeTab, deliveries, incidents, sales } = useTms();
 
   const pendingPODCount = deliveries.filter((d) => d.status === 'À valider').length;
   const incidentCount = countOpenOperationalIncidents(incidents, deliveries);
@@ -69,6 +75,8 @@ export const BackofficeLayout: React.FC = () => {
   const normalizedTab =
     backofficeTab === 'tracking'
       ? 'deliveries'
+      : backofficeTab === 'sales-generate'
+      ? 'sales'
       : backofficeTab === 'tour-create'
       ? 'tours'
       : backofficeTab === 'pending-validation'
@@ -134,17 +142,18 @@ export const BackofficeLayout: React.FC = () => {
 
         <div className="border-t border-[#E2E8F0] bg-white p-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#EFF6FF] text-xs font-semibold text-[#0057A8]">KD</div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#EFF6FF] text-xs font-semibold text-[#0057A8]">{company.name.slice(0, 2).toUpperCase()}</div>
             <div className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium text-[#1F2937]">Karim Dispatcher</span>
-              <span className="block truncate text-xs text-[#64748B]">Superviseur logistique</span>
+              <span className="block truncate text-sm font-medium text-[#1F2937]">{company.name}</span>
+              <span className="block truncate text-xs text-[#64748B]">{admin ? 'Administrateur plateforme' : 'Compte entreprise'}</span>
             </div>
           </div>
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
+      <div className="min-w-0 flex-1 flex flex-col h-full overflow-hidden">
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-[#E2E8F0] bg-white px-6">
+          {normalizedTab === 'sales' || !company.demo ? <span className="text-[13px] font-medium text-[#1F2937]">{sales.settings.companyName}</span> : <>
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-[18px] text-[#1976D2]">warehouse</span>
             <span className="text-[13px] text-[#64748B]">Dépôt central</span>
@@ -157,18 +166,22 @@ export const BackofficeLayout: React.FC = () => {
             </span>
             <span className="font-mono text-xs text-[#64748B]">15/09/2026 10:42</span>
           </div>
+          </>}
         </header>
 
         <main className="flex-1 flex flex-col overflow-hidden">
           {normalizedTab === 'dashboard' && <DashboardScreen />}
           {normalizedTab === 'control-tower' && <ControlTowerScreen />}
           {normalizedTab === 'orders' && <OrdersScreen />}
+          {normalizedTab === 'sales' && <React.Suspense fallback={<div role="status" className="p-6 text-sm text-[#64748B]">Chargement des dossiers…</div>}>
+            {backofficeTab === 'sales-generate' ? <SalesGenerationScreen /> : <SalesScreen />}
+          </React.Suspense>}
           {normalizedTab === 'planning' && <PlanningScreen />}
           {normalizedTab === 'tours' && <ToursScreen />}
           {normalizedTab === 'deliveries' && <TrackingScreen />}
           {normalizedTab === 'drivers' && <FleetScreen defaultTab="drivers" />}
           {normalizedTab === 'vehicles' && <FleetScreen defaultTab="vehicles" />}
-          {normalizedTab === 'providers' && <ProvidersScreen />}
+          {normalizedTab === 'providers' && company.demo ? <ProvidersScreen /> : <p className="p-4 text-sm">Aucun prestataire enregistré.</p>}
           {normalizedTab === 'validation' && <ValidationScreen />}
           {normalizedTab === 'incidents' && <AnomaliesScreen />}
           {normalizedTab === 'addresses' && <AddressesScreen />}

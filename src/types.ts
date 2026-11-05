@@ -124,6 +124,7 @@ export interface Delivery {
   failureReason?: string;
   failureComment?: string;
   failurePhotoUrl?: string;
+  sourceSale?: import('./types/sales').SalesOrigin;
 }
 
 export interface Tour {

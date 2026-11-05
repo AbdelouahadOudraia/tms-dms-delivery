@@ -1,3 +1,4 @@
+import { CompanyGate, useCompanySpace } from './context/CompanySpace';
 import React from 'react';
 import { TmsProvider, useTms } from './context/TmsContext';
 import { BackofficeLayout } from './components/backoffice/BackofficeLayout';
@@ -15,6 +16,8 @@ const MainApp: React.FC = () => {
     currentDriver,
   } = useTms();
 
+  const space = useCompanySpace();
+  const demo = space.company.demo && space.admin;
   const pendingCount = deliveries.filter((d) => d.status === 'À valider').length;
 
   const handleStartScenario = () => {
@@ -40,10 +43,8 @@ const MainApp: React.FC = () => {
               </span>
             </div>
           </div>
-          <span className="hidden items-center gap-1.5 rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2.5 py-1 text-xs font-medium text-[#0057A8] lg:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#0057A8]" />
-            Casablanca Hub
-          </span>
+          {space.admin ? <button className="bo-button-secondary" onClick={space.manage} title="Choisir une entreprise">{space.company.name} ▾</button> : <span className="text-sm">{space.company.name}</span>}
+          <button onClick={space.logout} title="Se déconnecter" aria-label="Se déconnecter" className="text-[#64748B]"><span className="material-symbols-outlined text-[18px]">logout</span></button>
         </div>
 
         {/* Center: Unified view mode segmented control */}
@@ -97,7 +98,7 @@ const MainApp: React.FC = () => {
             </span>
           )}
 
-          <button
+          {demo && <><button
             onClick={handleStartScenario}
             title="Lancer le parcours étape par étape"
             className="hidden h-8 items-center gap-1.5 rounded-md border border-[#CBD5E1] bg-white px-2.5 text-xs font-medium text-[#475569] transition-colors hover:bg-[#F8FAFC] md:flex"
@@ -112,7 +113,7 @@ const MainApp: React.FC = () => {
             className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[#CBD5E1] bg-white text-[#64748B] transition-colors hover:bg-[#F8FAFC] hover:text-[#0057A8]"
           >
             <span className="material-symbols-outlined text-[18px]">restart_alt</span>
-          </button>
+          </button></>}
         </div>
       </header>
 
@@ -145,7 +146,7 @@ const MainApp: React.FC = () => {
                   <span>Terminal Chauffeur (En direct)</span>
                 </span>
                 <span className="font-mono text-[10px] text-[#0057A8] font-bold">
-                  {currentDriver.name}
+                  {currentDriver?.name || 'Aucun chauffeur'}
                 </span>
               </div>
               <div className="flex-1 overflow-hidden">
@@ -161,9 +162,9 @@ const MainApp: React.FC = () => {
 
 export function App() {
   return (
-    <TmsProvider>
+    <CompanyGate><TmsProvider>
       <MainApp />
-    </TmsProvider>
+    </TmsProvider></CompanyGate>
   );
 }
 

@@ -111,8 +111,8 @@ export const ToursScreen: React.FC = () => {
   const [selectedTour, setSelectedTour] = useState<Tour>(tours[0]);
   const [showCreatePage, setShowCreatePage] = useState<boolean>(backofficeTab === 'tour-create');
   const [showDispatchModal, setShowDispatchModal] = useState<boolean>(false);
-  const [selectedDriverId, setSelectedDriverId] = useState<string>(drivers[0].id);
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string>(vehicles[0].id);
+  const [selectedDriverId, setSelectedDriverId] = useState<string>((drivers[0]?.id || ''));
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string>((vehicles[0]?.id || ''));
   const [dispatchSuccessToast, setDispatchSuccessToast] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
@@ -121,16 +121,16 @@ export const ToursScreen: React.FC = () => {
     zone: ZONE_OPTIONS[0],
     departureTime: '09:00',
     estimatedEndTime: '17:30',
-    driverId: drivers.find((driver) => driver.status === 'Disponible')?.id || drivers[0].id,
-    vehicleId: vehicles.find((vehicle) => vehicle.status === 'Disponible')?.id || vehicles[0].id,
+    driverId: drivers.find((driver) => driver.status === 'Disponible')?.id || (drivers[0]?.id || ''),
+    vehicleId: vehicles.find((vehicle) => vehicle.status === 'Disponible')?.id || (vehicles[0]?.id || ''),
     deliveryIds: [],
   });
 
-  const selectedTourSafe = tours.find((tour) => tour.id === selectedTour.id) || tours[0];
-  const tourDeliveries = deliveries.filter((delivery) => delivery.tourId === selectedTourSafe.id);
+  const selectedTourSafe = tours.find((tour) => tour.id === selectedTour?.id) || tours[0];
+  const tourDeliveries = deliveries.filter((delivery) => delivery.tourId === selectedTourSafe?.id);
   const selectedDepotName = WAREHOUSES.find((warehouse) =>
-    selectedTourSafe.zone === warehouse.name || selectedTourSafe.zone === getTourZoneLabel(warehouse)
-  )?.name ?? (tourDeliveries[0] ? getDeliveryWarehouse(tourDeliveries[0])?.name : undefined) ?? selectedTourSafe.zone;
+    selectedTourSafe?.zone === warehouse.name || selectedTourSafe?.zone === getTourZoneLabel(warehouse)
+  )?.name ?? (tourDeliveries[0] ? getDeliveryWarehouse(tourDeliveries[0])?.name : undefined) ?? selectedTourSafe?.zone ?? '';
   const selectedTourMapOverlay = useMemo(
     () => buildTourMapOverlay(tourDeliveries, selectedDepotName),
     [tourDeliveries, selectedDepotName]
@@ -500,6 +500,7 @@ export const ToursScreen: React.FC = () => {
     );
   }
 
+  if (!selectedTourSafe) return <div className="bo-page"><h1>Tournées</h1><p>Aucune tournée pour cette entreprise.</p><button className="bo-button-primary self-start" onClick={() => setShowCreatePage(true)}>Créer une tournée</button></div>;
   return (
     <div className="bo-page">
       {/* Header */}
@@ -588,7 +589,7 @@ export const ToursScreen: React.FC = () => {
                 <StatusBadge status={selectedTourSafe.status} size="md" />
               </div>
               <p className="mt-0.5 text-[13px] text-[#64748B]">
-                Zone : {selectedTourSafe.zone} • {tourDeliveries.length} livraisons programmées
+                Zone : {selectedTourSafe?.zone} • {tourDeliveries.length} livraisons programmées
               </p>
             </div>
 

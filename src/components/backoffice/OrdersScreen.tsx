@@ -182,8 +182,8 @@ export const OrdersScreen: React.FC = () => {
   };
 
   return (
-    <div className="bo-page gap-4">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="bo-page @container gap-4" style={{ overflowY: 'auto' }}>
+      <div className="flex shrink-0 flex-col gap-4 @4xl:flex-row @4xl:items-center @4xl:justify-between">
         <div>
           <h1 className="text-xl font-bold text-[#1e293b]">Ordres de livraison</h1>
           <p className="mt-1 text-sm text-[#64748B]">
@@ -191,10 +191,13 @@ export const OrdersScreen: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-3">
+        <div className="flex flex-wrap items-center gap-3 @4xl:justify-end">
           <span className="font-mono text-[13px] text-[#64748B]">
             Total : <strong>{filteredDeliveries.length}</strong> BL
           </span>
+          <button type="button" className="bo-button-secondary" onClick={() => setBackofficeTab('sales')}>
+            <span className="material-symbols-outlined text-[18px]">folder_open</span>Dossiers de vente
+          </button>
           <button
             type="button"
             onClick={handleCreateTour}
@@ -208,7 +211,7 @@ export const OrdersScreen: React.FC = () => {
         </div>
       </div>
 
-      <div className="bo-panel grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-[1.6fr_repeat(5,minmax(0,1fr))]">
+      <div className="bo-panel grid shrink-0 grid-cols-1 gap-3 p-4 @sm:grid-cols-2 @6xl:grid-cols-[1.6fr_repeat(5,minmax(0,1fr))]">
         <label className="text-[13px] font-medium text-[#475569]">
           <span className="mb-1.5 block">Recherche</span>
           <div className="relative">
@@ -324,7 +327,7 @@ export const OrdersScreen: React.FC = () => {
         </div>
       )}
 
-      <div className="bo-panel flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="bo-panel flex min-h-64 shrink-0 flex-1 flex-col overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] px-4 py-2.5">
           <div className="text-[13px] text-[#64748B]">
             <strong className="text-[#1E293B]">{selectedIds.length}</strong> BL sélectionné(s)
@@ -417,6 +420,7 @@ export const OrdersScreen: React.FC = () => {
                     </td>
                     <td className="whitespace-nowrap px-3 py-3 font-mono font-bold text-[#0057A8]">
                       {formatBlNumber(delivery.orderId)}
+                      {delivery.sourceSale && <span className="mt-1 block font-sans text-[11px] font-normal text-[#64748B]">{delivery.sourceSale.dossierReference}</span>}
                     </td>
                     <td className="px-3 py-3 font-bold text-[#1e293b]">{delivery.customerName}</td>
                     <td className="whitespace-nowrap px-3 py-3 font-medium text-[#475569]">
@@ -538,6 +542,7 @@ const OrderDetailsModal: React.FC<{ delivery: Delivery; onClose: () => void }> =
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <DetailItem label="N° BL" value={formatBlNumber(delivery.orderId)} />
             <DetailItem label="Statut" value={delivery.status} />
+            <DetailItem label="Date de livraison" value={delivery.deliveryDate || 'Non renseignée'} />
             <DetailItem label="Entrepôt de départ" value={warehouse ? `${warehouse.name} · ${warehouse.code}` : 'À renseigner'} />
             <DetailItem label="Créneau de livraison" value={delivery.timeSlot} />
             <DetailItem
@@ -546,6 +551,14 @@ const OrderDetailsModal: React.FC<{ delivery: Delivery; onClose: () => void }> =
             />
           </div>
         </DetailSection>
+
+        {delivery.sourceSale && <DetailSection title="Dossier de vente source">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <DetailItem label="Système source" value={delivery.sourceSale.systemName} />
+            <DetailItem label="Référence du dossier" value={delivery.sourceSale.dossierReference} />
+            <DetailItem label="Date de génération du BL" value={new Date(delivery.sourceSale.generatedAt).toLocaleString('fr-FR')} />
+          </div>
+        </DetailSection>}
 
         <DetailSection title="Client & destination">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

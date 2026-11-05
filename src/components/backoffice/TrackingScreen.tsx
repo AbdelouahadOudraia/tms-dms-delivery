@@ -6,7 +6,8 @@ import { Delivery } from '../../types';
 export const TrackingScreen: React.FC = () => {
   const { deliveries, drivers, tours, setSelectedDeliveryId, setBackofficeTab } = useTms();
 
-  const [selectedDelivery, setSelectedDelivery] = useState<Delivery>(deliveries[1]);
+  const [selection, setSelectedDelivery] = useState<Delivery>(deliveries[1] || deliveries[0]);
+  const selectedDelivery = deliveries.find(d => d.id === selection?.id) || deliveries[0];
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('Tous');
   const [driverFilter, setDriverFilter] = useState('Tous');
@@ -34,6 +35,7 @@ export const TrackingScreen: React.FC = () => {
     ['En route', 'Arrivé', 'Livraison en cours'].includes(delivery.status)
   ).length;
 
+  if (!deliveries.length) return <div className="bo-page"><h1>Livraisons</h1><p>Aucune livraison pour cette entreprise.</p></div>;
   return (
     <div className="bo-page !p-0">
       <div className="shrink-0 px-6 pb-4 pt-6">

@@ -35,6 +35,7 @@ const demoScreens = [
 
 export const DriverApp: React.FC = () => {
   const { driverScreen, setDriverScreen, deliveries, selectedDeliveryId, currentDriver } = useTms();
+  if (!currentDriver) return <p className="p-5 text-sm">Ajoutez un chauffeur dans l’espace de cette entreprise.</p>;
   const needsDelivery = ['detail', 'history-detail', 'navigation', 'arrival', 'items', 'pod', 'success', 'failed'].includes(driverScreen);
   const selectedDelivery = deliveries.find((delivery) => delivery.id === selectedDeliveryId && delivery.driverId === currentDriver.id);
   const canShowScreen = !needsDelivery || Boolean(selectedDelivery);

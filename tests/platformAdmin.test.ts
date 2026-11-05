@@ -1,0 +1,75 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+import { once } from 'node:events';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { AddressInfo } from 'node:net';
+import { createSalesApi } from '../server/sales/api';
+import { CompanyDirectory } from '../server/sales/companies';
+
+test('administration : migration historique, autorisations, supervision minimale, renommage atomique et sécurité des comptes', async t => {
+  const root = mkdtempSync(join(tmpdir(),'tms-admin-test-'));
+  const dataDir = join(root,'.data'); mkdirSync(dataDir);
+  const file = join(dataDir,'sales-live.sqlite');
+  const legacy = new DatabaseSync(file);
+  legacy.exec("CREATE TABLE companies(id TEXT PRIMARY KEY,name TEXT NOT NULL COLLATE NOCASE UNIQUE,demo INTEGER NOT NULL DEFAULT 0); INSERT INTO companies VALUES('archive','Historique',0)");
+  legacy.close();
+  const api = createSalesApi(root);
+  const server = api.app.listen(0,'127.0.0.1'); await once(server,'listening');
+  const operator = new CompanyDirectory(file);
+  t.after(async()=>{await new Promise<void>(done=>server.close(()=>done()));operator.close();api.close();rmSync(root,{recursive:true,force:true});});
+  const base = 'http://127.0.0.1:'+(server.address() as AddressInfo).port;
+  async function call(method:string, path:string, token='', body?:object, expected=200) {
+    const res = await fetch(base+path,{method,headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:body&&JSON.stringify(body)});
+    assert.equal(res.status,expected,method+' '+path);return res.json();
+  }
+  const password='initial-admin-access';
+  const admin=(await call('POST','/setup','',{password},201)).token;
+  for(const id of ['alfa','beta']) await call('POST','/companies',admin,{name:id,login:id,password:'initial-password-'+id},201);
+  const alfa=(await call('POST','/login','',{login:'alfa',password:'initial-password-alfa'})).token;
+  const beta=(await call('POST','/login','',{login:'beta',password:'initial-password-beta'})).token;
+  for(const [method,path] of [['GET','/admin/overview'],['PUT','/admin/password'],['PATCH','/companies/alfa'],['PATCH','/companies/beta']]) {
+    await call(method,path,'',undefined,401);await call(method,path,alfa,undefined,403);
+  }
+  await call('PUT','/companies/beta/password',alfa,{password:'unauthorized-password'},403);
+  const code=operator.issueRecoveryCode('admin');
+  const db = new DatabaseSync(file);
+  const state=JSON.parse(String(db.prepare('SELECT state_json FROM sales_workspaces WHERE company_id=?').get('alfa').state_json));
+  state.settings.url='https://private.example/orders';state.approvedSources=[{connectorId:'standard',url:state.settings.url}];
+  state.connectionTest=false;state.consecutiveFailures=1;state.lastSyncAt=new Date().toISOString();
+  state.dossiers=[{reference:'private-customer-record'}];
+  state.operations=[{type:'Récupération',status:'Erreur',message:'API commerciale : HTTP 403 (private-diagnostic).'}];
+  db.prepare('UPDATE sales_workspaces SET state_json=? WHERE company_id=?').run(JSON.stringify(state),'alfa');db.close();
+  const overview=await call('GET','/admin/overview',admin);
+  const summary=overview.companies.find(c=>c.id==='alfa');
+  assert.ok(Date.parse(summary.createdAt));assert.ok(Date.parse(overview.session.expiresAt)>Date.now());
+  assert.equal(summary.connection.state,'configured');assert.equal(summary.connection.error,'Erreur HTTP 403');
+  assert.equal(overview.companies.find(c=>c.id==='archive').createdAt,null);
+  assert.equal(overview.companies.find(c=>c.id==='archive').login,null);
+  assert.equal(overview.accounts.find(a=>a.login==='admin').role,'admin');
+  const json=JSON.stringify(overview);
+  for(const secret of [password,admin,code,'private-customer-record','private-diagnostic','private.example']) assert.ok(!json.includes(secret));
+  assert.doesNotMatch(json,/password|digest|token|recovery|[a-f0-9]{32}:[a-f0-9]{64}/i);
+  await call('PATCH','/companies/alfa',admin,{name:'Beta'},400);
+  await call('PATCH','/companies/alfa',admin,{name:'Alfa Transport',id:'beta'});
+  const after=await call('GET','/companies/alfa/state',alfa);
+  assert.equal(after.settings.companyName,'Alfa Transport');assert.deepEqual(after.dossiers,state.dossiers);
+  assert.equal((await call('GET','/access',beta)).companies[0].name,'beta');
+  await call('POST','/companies',admin,{name:'Other',login:'alfa',password:'duplicate-name-test'},400);
+  await call('PUT','/companies/alfa/password',admin,{password:'changed-company-password'});
+  await call('GET','/companies/alfa/state',alfa,undefined,401);
+  await call('POST','/login','',{login:'alfa',password:'changed-company-password'});
+  await call('PUT','/admin/password',admin,{currentPassword:'incorrect',password:'new-admin-password'},400);
+  await call('PUT','/admin/password',admin,{currentPassword:password,password:'short'},400);
+  await call('PUT','/admin/password',admin,{currentPassword:password,password},400);
+  const second=(await call('POST','/login','',{login:'admin',password})).token;
+  await call('PUT','/admin/password',admin,{currentPassword:password,password:'new-admin-password'});
+  for(const token of [admin,second]) await call('GET','/admin/overview',token,undefined,401);
+  assert.equal(operator.redeemRecoveryCode('admin',code,'forbidden-recovery'),false);
+  await call('POST','/login','',{login:'admin',password},401);await call('POST','/login','',{login:'admin',password:'new-admin-password'});
+  await call('GET','/companies/beta/state',beta);
+  const malformed = await fetch(base+'/admin/password',{method:'PUT',headers:{'content-type':'application/json'},body:'{"password":"sensitive-fragment" trailing'});
+  assert.equal(malformed.status,400);assert.ok(!(await malformed.text()).includes('sensitive-fragment'));
+});
