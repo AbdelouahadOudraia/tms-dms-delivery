@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {useDemoMode,deliveryNotice} from '../../context/DemoContext';
 import { Building2, Cable, ChevronRight, LayoutDashboard, LoaderCircle, LogOut, Menu, RefreshCw, Settings, ShieldCheck, Truck, UsersRound, X } from 'lucide-react';
 import { api, networkMessage } from '../../context/companyApi';
 import type { AdminCompany, AdminOverview } from '../../types/administration';
-import { Accounts, Companies, Connections, Details, Overview } from './AdminPages';
-import { AdminPassword, CompanyPassword, CreateCompany } from './AdminForms';
+import { Companies, Connections, Details, Overview } from './AdminPages';
+import {Accounts,AccountAccess} from './AccountAccess';
+import { AdminEmail, AdminPassword, CreateCompany } from './AdminForms';
 import { adminLink, formatDate, Info, Panel } from './AdminUI';
 
 const sections = [
@@ -19,10 +21,10 @@ function readRoute() {
 }
 type Props = { open(c: AdminCompany):void; logout():void; passwordChanged():void; busy:boolean; error:string };
 export default function AdminArea({ open,logout,passwordChanged,busy,error }: Props) {
+  const demo=useDemoMode();
   const [route,setRoute] = useState(readRoute), [menu,setMenu] = useState(false);
   const [data,setData] = useState<AdminOverview | null>(null), [loading,setLoading] = useState(true);
   const [loadError,setLoadError] = useState(''), [notice,setNotice] = useState('');
-  const [reset,setReset] = useState<AdminCompany | null>(null);
   const version = useRef(0);
   const reload = useCallback(async () => {
     const ticket = ++version.current;
@@ -34,15 +36,25 @@ export default function AdminArea({ open,logout,passwordChanged,busy,error }: Pr
   useEffect(()=>{
     void reload();
     const onFocus = () => { void reload(); };
-    const onRoute = () => { setRoute(readRoute());setMenu(false);setReset(null); };
+    const onRoute = () => { setRoute(readRoute());setMenu(false); };
     window.addEventListener('focus',onFocus); window.addEventListener('hashchange',onRoute);
     return ()=>{ version.current++;window.removeEventListener('focus',onFocus);window.removeEventListener('hashchange',onRoute); };
   },[reload]);
-  const active = route.startsWith('entreprise/') || route==='entreprises/nouvelle' ? 'entreprises' : route;
+  const active = route.startsWith('compte/')?'comptes':route.startsWith('entreprise/') || route==='entreprises/nouvelle' ? 'entreprises' : route;
   const selected = data?.companies.find(c => 'entreprise/'+encodeURIComponent(c.id)===route);
-  const title = route==='entreprises/nouvelle' ? 'Créer une entreprise' : route.startsWith('entreprise/') ? selected?.name ?? 'Détails de l’entreprise' :
+  const selectedAccount=data?.accounts.find(account=>'compte/'+encodeURIComponent(account.login)===route);
+  const title = route.startsWith('compte/')?'Gérer l’accès':route==='entreprises/nouvelle' ? 'Créer une entreprise' : route.startsWith('entreprise/') ? selected?.name ?? 'Détails de l’entreprise' :
     sections.find(s=>s.path===route)?.title ?? 'Page introuvable';
   const notify = (message: string) => { setNotice(message);void reload(); };
+  function companyDeleted(company: AdminCompany) {
+    setData(previous => previous && ({
+      ...previous,
+      companies: previous.companies.filter(item => item.id !== company.id),
+      accounts: previous.accounts.filter(account => account.companyId !== company.id),
+    }));
+    window.location.hash = adminLink('entreprises');
+    notify(company.name + ' a été supprimée définitivement.');
+  }
   return <div className="min-h-dvh bg-[#f4f7fb] text-slate-900 md:grid md:grid-cols-[224px_minmax(0,1fr)] xl:grid-cols-[246px_minmax(0,1fr)]">
     <aside className="z-20 flex flex-col bg-[#0b3152] text-white md:sticky md:top-0 md:h-dvh">
       <div className="flex items-center justify-between gap-2 border-b border-white/10 p-4 md:px-6 md:py-7">
@@ -71,16 +83,16 @@ export default function AdminArea({ open,logout,passwordChanged,busy,error }: Pr
       {data && <>
         {route==='' ? <Overview companies={data.companies}/> :
         route==='entreprises' ? <Companies companies={data.companies}/> :
-        route==='entreprises/nouvelle' ? <CreateCompany created={name=>{window.location.hash=adminLink('entreprises');notify('Espace créé pour '+name+'.');}}/> :
-        selected ? <div key={selected.id}><Details company={selected} open={open} reset={setReset} busy={busy} renamed={()=>notify('Nom de l’entreprise enregistré.')}/></div> :
-        route==='comptes' ? <Accounts data={data} reset={setReset}/> :
+        route==='entreprises/nouvelle' ? <CreateCompany created={name=>{window.location.hash=adminLink('entreprises');notify('Entreprise créée : '+name+'. '+deliveryNotice(demo));}}/> :
+        selected ? <div key={selected.id}><Details company={selected} open={open} busy={busy || loading} notify={notify} onDeleted={companyDeleted}/></div> :
+        route==='comptes' ? <Accounts accounts={data.accounts}/> :
+        selectedAccount ? <div key={selectedAccount.login}><AccountAccess login={selectedAccount.login} revision={selectedAccount.revision} refreshVersion={version.current} notify={notify}/></div> :
         route==='connexions' ? <Connections companies={data.companies}/> :
         route==='parametres' ? <div className="max-w-3xl space-y-5"><Panel title="Mon compte" action={<button className="bo-button-secondary" disabled={busy} onClick={logout}><LogOut size={15}/>Se déconnecter</button>}>
-          <dl className="grid gap-5 p-5 sm:grid-cols-3 sm:p-6"><Info label="Identifiant">{data.session.login}</Info><Info label="Rôle">Administrateur plateforme</Info><Info label="Fin de session prévue">{formatDate(data.session.expiresAt)}</Info></dl>
-          </Panel><AdminPassword changed={passwordChanged}/></div> :
+          <dl className="grid gap-5 p-5 sm:grid-cols-3 sm:p-6"><Info label="Adresse e-mail de connexion">{data.session.email??data.session.login}</Info><Info label="Rôle">Administrateur plateforme</Info><Info label="Fin de session prévue">{formatDate(data.session.expiresAt)}</Info></dl>
+          </Panel><div key={(data.session.email??'')+'|'+(data.session.pendingEmail??'')}><AdminEmail email={data.session.email} emailVerified={data.session.emailVerified} pendingEmail={data.session.pendingEmail} notify={notify}/></div><AdminPassword changed={passwordChanged}/></div> :
         <Panel title="Élément introuvable"><a className="m-5 inline-block text-blue-800 underline" href={adminLink('entreprises')}>Consulter les entreprises</a></Panel>}
       </>}
     </main></div>
-    {reset && <CompanyPassword company={reset} close={()=>setReset(null)} done={()=>{setReset(null);notify('Accès mis à jour pour '+reset.name+'.');}}/>}
   </div>;
 }

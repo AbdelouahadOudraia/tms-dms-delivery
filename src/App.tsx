@@ -1,4 +1,6 @@
 import { CompanyGate, useCompanySpace } from './context/CompanySpace';
+import { CompanyEmailLink } from './components/CompanyEmailLink';
+import {DemoFrame} from './components/DemoFrame';
 import React from 'react';
 import { TmsProvider, useTms } from './context/TmsContext';
 import { BackofficeLayout } from './components/backoffice/BackofficeLayout';
@@ -162,9 +164,9 @@ const MainApp: React.FC = () => {
 
 export function App() {
   return (
-    <CompanyGate><TmsProvider>
+    <DemoFrame><CompanyEmailLink><CompanyGate><TmsProvider>
       <MainApp />
-    </TmsProvider></CompanyGate>
+    </TmsProvider></CompanyGate></CompanyEmailLink></DemoFrame>
   );
 }
 

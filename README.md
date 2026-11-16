@@ -14,6 +14,16 @@ Maquette React/TypeScript d'une solution de gestion des ordres de livraison, des
 - validation ou rejet de l'e-POD dans le backoffice ;
 - suivi des tournées, incidents et indicateurs de la Control Tower.
 
+## Présenter la maquette sans Gmail ni SMTP
+
+```powershell
+npm.cmd run demo
+```
+
+Ouvrir <http://127.0.0.1:3020>. Ce mode utilise uniquement `.data/demo/demo.sqlite`. Le bandeau **Simulation — Aucun e-mail réel envoyé** donne accès à la boîte de réception simulée et à une remise à zéro limitée à cette démonstration. Les bases existantes sont conservées. Aucun SMTP ni clé serveur n’est nécessaire.
+
+[Guide de démonstration pas à pas](docs/DEMO.md) : créer l’admin, vérifier l’adresse, inviter une entreprise, récupérer les deux mots de passe et recommencer depuis zéro. Utiliser des e-mails fictifs comme `admin@demo.test` et `entreprise@demo.test`.
+
 ## Lancer le projet
 
 Prérequis : Node.js 24 (stockage SQLite intégré).
@@ -52,15 +62,31 @@ Le projet utilise des données de démonstration. L'optimisation, le GPS, les he
 
 Les cartes de tournée utilisent un aperçu statique afin que les repères restent alignés avec le tracé. Le bouton **Ouvrir dans Google Maps** permet d'ouvrir la zone réelle dans Google Maps.
 
+## Entreprises de test locales
+
+Sous Windows, lancer `npm.cmd run dev:test` et ouvrir <http://127.0.0.1:3010>. Au premier lancement, configurer SMTP et l’initialisation par e-mail de l’admin, comme indiqué dans le [guide e-mail](docs/GMAIL_AUTH.md). Les accès déjà créés restent utilisables. Cette commande utilise la base dédiée `.data/tenant-test.sqlite`. Les entreprises et les connexions commerciales du serveur habituel restent dans leur propre environnement.
+
+Dans **Entreprises**, créer une entreprise fictive et utiliser son e-mail vérifié et son mot de passe pour tester son espace. Revenir avec l’e-mail du super administrateur, ouvrir la fiche de l’entreprise, puis **Gestion de l’entreprise → Désactiver l’entreprise**. Après confirmation, cliquer sur **Supprimer définitivement**, saisir le nom exact (accents, espaces et majuscules compris), puis **Confirmer la suppression**. Une nouvelle entreprise peut reprendre le même identifiant d’espace. Le journal de test conserve l’identifiant de l’espace supprimé, l’auteur et la date.
+
 ## Synchronisation des dossiers de vente
 
 `npm run dev` démarre aussi l'API `/api/sales` et son traitement automatique. Le service continue à fonctionner quand la page est fermée, tant que le processus Node reste actif. La page interroge seulement son état pour l'afficher.
 
-Au premier lancement sur localhost, créer le mot de passe du compte `admin`. Sa connexion ouvre le tableau de bord de l’administration. Dans **Entreprises**, créer un espace avec son nom, son identifiant de connexion et son mot de passe initial. Ouvrir la fiche d’une entreprise pour la renommer ou accéder à son espace TMS/DMS. Pour un espace historique sans accès, choisir **Définir le mot de passe** sur sa fiche. Chaque compte entreprise accède directement à son propre espace.
+### Comptes, invitations et récupération par e-mail
 
-**Mot de passe oublié.** La récupération utilise l’accès autorisé au serveur local. Après vérification de l’identité du demandeur, le responsable ouvre un terminal privé, sans enregistrement, dans le dossier de l’installation qui sert la plateforme. Pour le compte administrateur, il exécute `npm run auth:recovery -- admin`. Pour une entreprise, il remplace `admin` par son identifiant exact. Cette commande exige un terminal interactif et le droit d’écrire dans la base de l’installation. Protéger ce dossier avec les permissions du système d’exploitation.
+La page **Comptes et accès** gère le blocage et le déblocage indépendants des comptes, la révocation des sessions et l’historique de sécurité. Bloquer un compte coupe ses accès ; désactiver une entreprise arrête aussi ses synchronisations. Le changement d’e-mail conserve l’adresse vérifiée actuelle jusqu’à confirmation de la nouvelle. [Guide des opérations et des fichiers concernés](docs/COMPTES_ACCES.md).
 
-Le responsable remet le code par un canal privé. Sur **Mot de passe oublié ?**, saisir l’identifiant, le code et le nouveau mot de passe (10 à 200 caractères), puis se reconnecter. Le code expire après 15 minutes. Un nouveau code remplace le précédent. Seule son empreinte est conservée. Le changement de mot de passe invalide les sessions du compte. Après vérification de l’identité du demandeur, un administrateur connecté peut aussi choisir **Réinitialiser** dans **Comptes et accès** pour renouveler le mot de passe de l’entreprise concernée.
+Deux rôles uniquement : super administrateur et compte entreprise. Tous les comptes se connectent exclusivement avec une adresse e-mail unique et vérifiée et leur mot de passe. Les anciens identifiants `admin` et `electroplanet` sont refusés, y compris pour les comptes historiques. Les nouveaux comptes exigent un e-mail. Gmail est compatible comme expéditeur SMTP ; les adresses professionnelles sont également acceptées.
+
+**Configuration et procédures : [guide complet](docs/GMAIL_AUTH.md).** Les secrets restent dans l’environnement serveur ou le fichier privé `.env`, ignoré par Git. Aucun envoi réussi n’est simulé sans SMTP.
+
+Pour tester une création admin depuis zéro sans supprimer les comptes existants, configurer le SMTP `TMS_TEST_` et la clé `TMS_TEST_SETUP_SECRET`, arrêter le serveur de test qui occupe 3010, puis lancer `npm.cmd run dev:auth-test`. Chaque lancement crée une nouvelle base `.data/auth-sandboxes/auth-.../.data/tenant-test.sqlite`. Le terminal indique son chemin. Les bases existantes et les anciens bacs à sable sont conservés.
+
+`npm.cmd run dev:test` reprend la base de test existante `.data/tenant-test.sqlite`. Les clés internes historiques et les données restent conservées. Un compte sans adresse vérifiée ne peut pas se connecter. L’administrateur vérifié peut associer et faire vérifier l’adresse d’une entreprise ; pour un ancien administrateur sans e-mail, utiliser la procédure de maintenance contrôlée du guide. Aucun accès par ancien identifiant n’est conservé pour cette migration.
+
+Une nouvelle entreprise est créée par le super administrateur avec son nom et son e-mail. Le backend génère son identifiant technique unique : `electroplanet`, `electroplanet-2`, etc. Les noms identiques sont autorisés ; les identifiants existants et les liens métier restent conservés, même après renommage. La migration des anciennes bases habituelles exige une sauvegarde et une autorisation explicite `TMS_ALLOW_COMPANY_NAME_MIGRATION=true` ; les essais utilisent uniquement le mode démo. L’invitation permet au destinataire de choisir son mot de passe. La récupération des deux types de comptes se fait exclusivement avec **Mot de passe oublié ? → Envoyer le lien de récupération**. Les liens expirent après 15 minutes, s’utilisent une seule fois et ne sont stockés que sous forme d’empreinte. Les codes de secours et les réinitialisations forcées d’un mot de passe entreprise ont été retirés.
+
+Une intervention exceptionnelle, hors HTTP et désactivée par défaut, peut transférer une adresse perdue après identité contrôlée, double accord consigné, sauvegarde et autorisation de l’exploitant. Elle ne change aucun mot de passe et impose une nouvelle vérification par e-mail. Voir le guide avant toute utilisation. La réception réelle dans Gmail reste à valider après configuration du compte expéditeur.
 
 Dans **Dossiers de vente → Connexion API** :
 

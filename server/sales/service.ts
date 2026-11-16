@@ -17,11 +17,10 @@ export class SalesSyncService {
   private running: Promise<SalesWorkspace> | null = null;
   private testsInProgress = 0;
   private epoch = 0;
-  private closed = false;
-  private closedSnapshot: SalesWorkspace | null = null;
+  private lifetime = new AbortController();
   constructor(private store: SalesStore, readonly companyId: string,
-    private options: { scheduling?: boolean; credential?: (settings: SalesApiSettings) => string | undefined; privateEndpoint?: (source: CommercialSource) => boolean; source?: Pick<SalesApiSettings, 'companyName' | 'connectorId' | 'sourceName' | 'url'>; connectors?: typeof SALES_CONNECTORS; now?: () => number } = {}) {
-    const recovered = store.transaction(companyId, (state) => ({ ...state, importing: false,
+    private options: { isActive?: () => boolean; scheduling?: boolean; credential?: (settings: SalesApiSettings) => string | undefined; privateEndpoint?: (source: CommercialSource) => boolean; source?: Pick<SalesApiSettings, 'companyName' | 'connectorId' | 'sourceName' | 'url'>; connectors?: typeof SALES_CONNECTORS; now?: () => number } = {}) {
+    const recovered = this.update((state) => ({ ...state, importing: false,
       // Prior to delegation only the platform administrator could set this exact source.
       approvedSources: state.approvedSources ?? (state.settings.url ? [{ ...identity(state.settings), legacyNetwork: true }] : []),
       settings: { ...state.settings, ...options.source, automatic: Boolean((options.source?.url ?? state.settings.url) && state.settings.automatic) },
@@ -31,17 +30,31 @@ export class SalesSyncService {
     if (recovered.settings.automatic) this.schedule(recovered.nextSyncAt || new Date(this.now()).toISOString());
   }
   private now() { return this.options.now?.() ?? Date.now(); }
+  private isActive() {
+    return !this.lifetime.signal.aborted && (this.options.isActive?.() ?? true);
+  }
+  private requestSignal = () => {
+    if (!this.isActive()) throw new SourcePolicyError(403, 'Ce service de synchronisation est suspendu.');
+    return this.lifetime.signal;
+  };
+  private update(change: (state: SalesWorkspace) => SalesWorkspace) {
+    // Verify the lifecycle revision while holding the SQLite write lock.
+    return this.store.transaction(this.companyId, state => {
+      this.requestSignal();
+      return change(state);
+    });
+  }
   private clearTimer() { if (this.timer) clearTimeout(this.timer); this.timer = null; }
   private schedule(at: string | null) {
     this.clearTimer();
-    this.store.transaction(this.companyId, (state) => ({ ...state, nextSyncAt: state.settings.automatic ? at : null }));
-    if (!at || this.options.scheduling === false || this.closed) return;
+    this.update((state) => ({ ...state, nextSyncAt: state.settings.automatic ? at : null }));
+    if (!at || this.options.scheduling === false) return;
     this.timer = setTimeout(() => this.runScheduled(), Math.max(0, new Date(at).getTime() - this.now()));
     this.timer.unref();
   }
   private runScheduled() {
-    void this.synchronize('Automatique').catch(() => {
-      if (this.closed) return;
+    void this.synchronize('Automatique').catch(error => {
+      if (this.lifetime.signal.aborted || error instanceof SourcePolicyError) return;
       // Storage failures cannot always be journaled in that same storage. Retry
       // without writing first, so a temporary lock does not stop the worker.
       console.error('Stockage de synchronisation indisponible ; nouvelle tentative dans 5 secondes.');
@@ -57,7 +70,7 @@ export class SalesSyncService {
     if (!this.options.privateEndpoint?.(source)) validatePublicEndpoint(new URL(source.url));
   }
   authorize(source: CommercialSource) {
-    return this.store.transaction(this.companyId, state => {
+    return this.update(state => {
       if (state.approvedSources.some(entry => sameSource(entry, source))) return state;
       this.validateNewSource(source);
       return { ...state, approvedSources: [...state.approvedSources, identity(source)] };
@@ -65,7 +78,7 @@ export class SalesSyncService {
   }
   revoke(source: CommercialSource) {
     if (this.running || this.testsInProgress) throw new SourcePolicyError(409, 'Un appel est en cours. Réessayez après sa fin.');
-    const next = this.store.transaction(this.companyId, state => {
+    const next = this.update(state => {
       const approvedSources = state.approvedSources.filter(entry => !sameSource(entry, source));
       if (!sameSource(state.settings, source)) return { ...state, approvedSources };
       return { ...state, approvedSources, settings: { ...state.settings, automatic: false },
@@ -86,7 +99,7 @@ export class SalesSyncService {
     settings = { ...settings, ...this.options.source };
     validateSalesApiSettings(settings);
     if (settings.automatic && !settings.url) throw new Error('Configurez d’abord l’URL de l’API sur le serveur.');
-    const next = this.store.transaction(this.companyId, state => {
+    const next = this.update(state => {
       if ((state.dossiers.length || state.generatedBls.length) && !sameSource(state.settings, settings))
         throw new SourcePolicyError(409, 'Cet espace contient déjà des dossiers importés. Le changement de source nécessite une migration.');
       let approvedSources = state.approvedSources;
@@ -110,21 +123,22 @@ export class SalesSyncService {
     return this.snapshot();
   }
   async synchronize(trigger: 'Manuel' | 'Automatique' = 'Manuel'): Promise<SalesWorkspace> {
+    this.requestSignal();
     if (this.running) return this.running;
-    if (this.closed) throw new Error('Le service est arrêté.');
     const connector = this.connector(this.snapshot());
     this.clearTimer();
     const epoch = this.epoch;
     const id = randomUUID(), started = new Date(this.now()).toISOString();
-    const before = this.store.transaction(this.companyId, (state) => ({ ...state, importing: true, nextSyncAt: null,
+    const before = this.update((state) => ({ ...state, importing: true, nextSyncAt: null,
       message: 'Synchronisation des dossiers à transformer en BL…', operations: [{ id, type: 'Récupération', status: 'En cours', trigger,
         timestamp: started, message: 'Synchronisation en cours.', references: [] } satisfies SalesOperation, ...state.operations].slice(0, 200) }));
     const task = (async () => {
       try {
-        const batch = await connector.fetchDossiers(before.settings, before.cursor, before.dossiers, this.options.credential?.(before.settings));
-        if (this.closed || epoch !== this.epoch) return this.closedSnapshot || this.snapshot();
+        const batch = await connector.fetchDossiers(before.settings, before.cursor, before.dossiers, this.options.credential?.(before.settings), this.requestSignal);
+        this.requestSignal();
+        if (epoch !== this.epoch) return this.snapshot();
         const timestamp = new Date(this.now()).toISOString();
-        return this.store.transaction(this.companyId, (state) => {
+        return this.update((state) => {
           const result = reconcileSalesDossiers(state.dossiers, batch.dossiers, state.generatedBls, state.settings.eligibleStatuses);
           const message = result.imported || result.updated || result.unchanged
             ? `${result.imported} nouveau(x) dossier(s), ${result.updated} mis à jour, ${result.unchanged} déjà connu(s).`
@@ -135,17 +149,18 @@ export class SalesSyncService {
             operations: state.operations.map((operation) => operation.id === id ? { ...operation, status: 'Réussi', timestamp, message, references: result.references } : operation) };
         });
       } catch (cause) {
-        if (this.closed || epoch !== this.epoch) return this.closedSnapshot || this.snapshot();
+        this.requestSignal();
+        if (epoch !== this.epoch) return this.snapshot();
         const timestamp = new Date(this.now()).toISOString();
         const message = cause instanceof Error ? cause.message : 'La synchronisation a échoué.';
-        return this.store.transaction(this.companyId, (state) => ({ ...state, importing: false, message, lastSyncAt: timestamp,
+        return this.update((state) => ({ ...state, importing: false, message, lastSyncAt: timestamp,
           consecutiveFailures: state.consecutiveFailures + 1,
           nextSyncAt: getNextSalesSyncAt(state.settings, state.consecutiveFailures + 1, this.now()),
           operations: state.operations.map((operation) => operation.id === id ? { ...operation, status: 'Erreur', timestamp, message, references: [] } : operation) }));
       }
     })().finally(() => {
       if (this.running === task) this.running = null;
-      if (!this.closed) this.schedule(this.snapshot().nextSyncAt);
+      if (this.isActive()) this.schedule(this.snapshot().nextSyncAt);
     });
     this.running = task;
     return task;
@@ -157,11 +172,12 @@ export class SalesSyncService {
     const epoch = this.epoch;
     let available = true, message = 'Connexion réussie. Le service a répondu à la requête.';
     this.testsInProgress++;
-    try { await connector.test(settings, this.options.credential?.(settings)); }
+    try { await connector.test(settings, this.options.credential?.(settings), this.requestSignal); }
     catch (error) { available = false; message = error instanceof Error ? error.message : 'Connexion impossible.'; }
     finally { this.testsInProgress--; }
-    if (this.closed || epoch !== this.epoch) return this.closedSnapshot || this.snapshot();
-    return this.store.transaction(this.companyId, (state) => {
+    this.requestSignal();
+    if (epoch !== this.epoch) return this.snapshot();
+    return this.update((state) => {
       const operation: SalesOperation = { id: randomUUID(), type: 'Test connexion', status: available ? 'Réussi' : 'Erreur',
         timestamp: new Date(this.now()).toISOString(), references: [], message };
       return { ...state, connectionTest: available, message, operations: [operation, ...state.operations].slice(0, 200) };
@@ -171,7 +187,7 @@ export class SalesSyncService {
     const timestamp = new Date(this.now()).toISOString();
     try {
       let generated: SalesWorkspace['generatedBls'] = [];
-      const state = this.store.transaction(this.companyId, (previous) => {
+      const state = this.update((previous) => {
         generated = generateSalesBls(previous.dossiers, previous.generatedBls, requests, timestamp, previous.settings.eligibleStatuses);
         const operation: SalesOperation = { id: randomUUID(), type: 'Génération BL', status: 'Réussi', timestamp,
           message: `${generated.length} BL généré(s) au statut « À confirmer ».`, references: generated.map((bl) => bl.orderId) };
@@ -181,10 +197,10 @@ export class SalesSyncService {
       return { state, generated };
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'La génération a échoué.';
-      this.store.transaction(this.companyId, (state) => ({ ...state, message, operations: [{ id: randomUUID(),
+      this.update((state) => ({ ...state, message, operations: [{ id: randomUUID(),
         type: 'Génération BL', status: 'Erreur', timestamp, message, references: [] } satisfies SalesOperation, ...state.operations].slice(0, 200) }));
       throw new Error(message);
     }
   }
-  close() { this.closedSnapshot = this.snapshot(); this.closed = true; this.epoch++; this.clearTimer(); }
+  close() { this.lifetime.abort(); this.clearTimer(); }
 }

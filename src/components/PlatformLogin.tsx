@@ -1,6 +1,8 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { ArrowRight, CircleAlert, Eye, EyeOff, LoaderCircle, LockKeyhole, Truck, UserRound } from 'lucide-react';
+import { ArrowRight, CircleAlert, Eye, EyeOff, LoaderCircle, LockKeyhole, UserRound } from 'lucide-react';
 import { api, networkMessage } from '../context/companyApi';
+import {useDemoMode} from '../context/DemoContext';
+import { PlatformBrand } from './PlatformBrand';
 
 type LoginProps = {
   busy: boolean;
@@ -18,6 +20,7 @@ export function PlatformLogin({ busy, error, clearError, onLogin }: LoginProps) 
   const [loginHint, setLoginHint] = useState('');
   const [notice, setNotice] = useState('');
   const [missing, setMissing] = useState({ login: false, password: false });
+  const [emailError,setEmailError]=useState('');
   const loginInput = useRef<HTMLInputElement>(null);
   const passwordInput = useRef<HTMLInputElement>(null);
   const submitting = useRef(false);
@@ -27,6 +30,7 @@ export function PlatformLogin({ busy, error, clearError, onLogin }: LoginProps) 
     setNotice('');
     setVisible(false);
     setMissing({ login: false, password: false });
+    setEmailError('');
     setLoginHint(loginInput.current?.value.trim() ?? '');
     setRecovery(true);
   }
@@ -45,10 +49,12 @@ export function PlatformLogin({ busy, error, clearError, onLogin }: LoginProps) 
     setNotice('');
     const login = loginInput.current!.value.trim();
     const password = passwordInput.current!.value;
-    setMissing({ login: !login, password: !password });
-    if (!login || !password) {
+    const emailError=!login?'Saisissez votre adresse e-mail.':/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(login)?'':'Saisissez une adresse e-mail valide.';
+    setEmailError(emailError);
+    setMissing({ login: Boolean(emailError), password: !password });
+    if (emailError || !password) {
       clearError();
-      (login ? passwordInput : loginInput).current?.focus();
+      (emailError ? loginInput : passwordInput).current?.focus();
       return;
     }
     submitting.current = true;
@@ -62,23 +68,10 @@ export function PlatformLogin({ busy, error, clearError, onLogin }: LoginProps) 
   return (
     <main className={`${recovery ? 'flex min-h-dvh flex-col items-center py-4 sm:py-6' : 'grid min-h-dvh place-items-center py-8'} bg-[radial-gradient(ellipse_at_top,#e5eff9,transparent_65%)] bg-[#f4f7fb] px-4 text-slate-900`}>
       <section aria-labelledby="platform-login-title" className={`bo-panel ${recovery ? 'my-auto shrink-0' : ''} w-full max-w-[460px] overflow-hidden rounded-2xl border-slate-200 shadow-[0_12px_42px_-16px_rgba(21,50,82,0.23)]`}>
-        <div className="relative isolate flex min-h-20 items-center overflow-hidden bg-linear-to-r from-[#07365f] to-[#0057A8] px-6 sm:px-9">
-          <svg aria-hidden="true" focusable="false" viewBox="0 0 176 80" className="pointer-events-none absolute inset-y-0 right-0 -z-10 h-full w-auto max-[380px]:w-24" fill="none">
-            <g stroke="#fff" strokeOpacity=".13">
-              <path d="M17 -5 65 43h56l41 42M45 -8l45 45h40l46 45M89 -8l34 34h53M15 85l33-33h58l64-64M63 85l25-25h45l43-43M118 85l58-58" />
-            </g>
-            <path d="M56 56h35l24-24h29" stroke="#91ccff" strokeWidth="2" strokeLinejoin="round"/>
-            <circle cx="56" cy="56" r="3.5" fill="#0b4b85" stroke="#91ccff" strokeWidth="2"/>
-            <circle cx="144" cy="32" r="4" fill="#ffd200"/>
-          </svg>
-          <div className="flex items-center gap-3 text-white">
-            <span className="grid size-9 place-items-center rounded-lg border border-white/25 bg-white/10"><Truck aria-hidden="true" size={21} strokeWidth={1.8}/></span>
-            <span className="text-sm font-semibold tracking-wide">TMS / DMS Delivery</span>
-          </div>
-        </div>
+        <PlatformBrand/>
         <div className={recovery ? 'px-5 py-5 sm:px-9 sm:py-7' : 'px-6 py-7 sm:px-9 sm:py-9'}>
           <h1 id="platform-login-title" className="text-[clamp(1.5rem,4vw,1.8rem)] leading-tight font-semibold tracking-tight text-[#142f49]">{recovery ? 'Réinitialiser le mot de passe' : 'Bienvenue sur TMS/DMS'}</h1>
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">{recovery ? 'Saisissez le code remis par l’administrateur habilité.' : 'Plateforme de gestion du transport et des livraisons'}</p>
+          {!recovery && <p className="mt-2 text-sm leading-relaxed text-slate-600">Plateforme de gestion du transport et des livraisons</p>}
 
           {recovery ? <PasswordRecovery loginHint={loginHint} onBack={returnToLogin}/> : <>
           <form noValidate aria-busy={busy} onSubmit={submit} onChange={error ? clearError : undefined} className="mt-7 space-y-5">
@@ -87,15 +80,15 @@ export function PlatformLogin({ busy, error, clearError, onLogin }: LoginProps) 
               <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0"/><span>{error}</span>
             </div>}
             <div>
-              <label htmlFor="platform-login-id" className="block text-sm font-semibold text-slate-700">Identifiant de connexion</label>
+              <label htmlFor="platform-login-id" className="block text-sm font-semibold text-slate-700">Adresse e-mail</label>
               <div className="relative mt-2">
                 <UserRound aria-hidden="true" className={inputIcon}/>
-                <input ref={loginInput} id="platform-login-id" name="login" defaultValue={loginHint} autoComplete="username" autoCapitalize="none" spellCheck={false}
-                  required readOnly={busy} placeholder="Saisissez votre identifiant" aria-invalid={missing.login}
+                <input ref={loginInput} id="platform-login-id" name="login" type="email" maxLength={254} defaultValue={loginHint} autoComplete="username" autoCapitalize="none" spellCheck={false}
+                  required readOnly={busy} placeholder="Saisissez votre adresse e-mail" aria-invalid={missing.login}
                   aria-describedby={missing.login ? 'platform-id-error' : undefined} className={inputClass}
-                  onChange={e => { if (missing.login && e.target.value.trim()) setMissing(prev => ({ ...prev, login: false })); }}/>
+                  onChange={() => {setEmailError('');setMissing(prev=>({...prev,login:false}));}}/>
               </div>
-              {missing.login && <p id="platform-id-error" className="mt-1.5 text-sm text-red-700">Saisissez votre identifiant de connexion.</p>}
+              {missing.login && <p id="platform-id-error" className="mt-1.5 text-sm text-red-700">{emailError}</p>}
             </div>
             <div>
               <label htmlFor="platform-login-password" className="block text-sm font-semibold text-slate-700">Mot de passe</label>
@@ -129,81 +122,40 @@ export function PlatformLogin({ busy, error, clearError, onLogin }: LoginProps) 
 }
 
 const recoveryInputClass = 'bo-input h-11 w-full rounded-lg border-[#8291a5] text-base focus-visible:outline-2 focus-visible:outline-offset-2 aria-invalid:border-red-700';
-type RecoveryField = 'login' | 'code' | 'password' | 'confirmation';
 
-function PasswordRecovery({ loginHint, onBack }: { loginHint: string; onBack(login?: string): void }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<RecoveryField, string>>>({});
-  const pending = useRef(false);
-  async function submit(event: FormEvent<HTMLFormElement>) {
+
+function PasswordRecovery({loginHint,onBack}: {loginHint:string; onBack(login?:string):void}) {
+  const demo=useDemoMode();
+  const [email,setEmail]=useState(loginHint.includes('@') ? loginHint : '');
+  const [requested,setRequested]=useState(false);
+  const [busy,setBusy]=useState(false), [error,setError]=useState('');
+  const pending=useRef(false);
+  async function submit(event:FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending.current) return;
-    const form = event.currentTarget;
-    const data = new FormData(form);
-    const login = String(data.get('login')).trim();
-    const code = String(data.get('code')).trim();
-    const password = String(data.get('password'));
-    const errors: Record<RecoveryField, string> = {
-      login: login ? '' : 'Saisissez votre identifiant de connexion.',
-      code: code ? '' : 'Saisissez le code de récupération.',
-      password: password.length >= 10 && password.length <= 200 ? '' : 'Choisissez un mot de passe de 10 à 200 caractères.',
-      confirmation: password === data.get('confirmation') ? '' : 'Les deux mots de passe doivent être identiques.',
-    };
-    setError('');
-    setFieldErrors(errors);
-    const invalid = Object.entries(errors).find(([, message]) => message);
-    if (invalid) {
-      (form.elements.namedItem(invalid[0]) as HTMLInputElement).focus();
-      return;
-    }
-    pending.current = true;
-    setBusy(true);
-    setError('');
-    try {
-      await api('/password-recovery', 'POST', { login, code, password });
-      onBack(login);
-    } catch (cause) {
-      setError(cause instanceof TypeError ? networkMessage : cause instanceof Error ? cause.message : 'Une erreur technique est survenue.');
-    } finally {
-      pending.current = false;
-      setBusy(false);
-    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {setError('Saisissez une adresse e-mail valide.');return;}
+    pending.current=true;setBusy(true);setError('');
+    try {await api('/company-email/request','POST',{email:email.trim()});setRequested(true);}
+    catch(cause){setError(cause instanceof TypeError ? networkMessage : cause instanceof Error ? cause.message : 'Demande indisponible.');}
+    finally {pending.current=false;setBusy(false);}
   }
-  return <form noValidate onSubmit={submit} aria-busy={busy} onChange={event => {
-    const field = (event.target as HTMLInputElement).name;
-    setError('');
-    setFieldErrors(previous => ({ ...previous, [field]: undefined }));
-  }} className="mt-5 space-y-4 text-sm">
-    <details className="rounded-lg bg-slate-50 px-3 py-2.5 text-slate-700">
-      <summary className="cursor-pointer font-medium text-[#0057A8]">Comment obtenir un code ?</summary>
-      <p className="mt-2">Contactez l’administrateur habilité de votre plateforme. Après vérification de votre identité, il vous remettra un code personnel valable 15 minutes et utilisable une seule fois.</p>
-    </details>
-    {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-3 text-red-800">{error}</p>}
-    <div>
-      <label htmlFor="recovery-login" className="block font-semibold text-slate-700">Identifiant de connexion</label>
-      <input id="recovery-login" autoFocus required name="login" defaultValue={loginHint} autoComplete="username" autoCapitalize="none" spellCheck={false} readOnly={busy}
-        aria-invalid={Boolean(fieldErrors.login)} aria-describedby={fieldErrors.login ? 'recovery-login-error' : undefined} className={recoveryInputClass + ' mt-1.5'}/>
-      {fieldErrors.login && <p id="recovery-login-error" className="mt-1.5 text-sm text-red-700">{fieldErrors.login}</p>}
+  return <form onSubmit={submit} aria-busy={busy} className="mt-5 space-y-4 text-sm">
+    <p className="leading-relaxed text-slate-600">Saisissez l’adresse e-mail vérifiée associée à votre compte.</p>
+    <div><label htmlFor="recovery-email" className="block font-semibold text-slate-700">Adresse e-mail</label>
+      <input id="recovery-email" name="email" type="email" required maxLength={254} autoComplete="email" autoFocus
+        value={email} readOnly={busy} onChange={event=>{setEmail(event.target.value);setError('');setRequested(false);}}
+        placeholder="vous@entreprise.fr" className={recoveryInputClass+' mt-1.5'}/>
     </div>
-    <div>
-      <label htmlFor="recovery-code" className="block font-semibold text-slate-700">Code de récupération</label>
-      <input id="recovery-code" required name="code" type="password" autoComplete="one-time-code" spellCheck={false} readOnly={busy}
-        aria-invalid={Boolean(fieldErrors.code)} aria-describedby={fieldErrors.code ? 'recovery-code-error' : undefined} className={recoveryInputClass + ' mt-1.5'}/>
-      {fieldErrors.code && <p id="recovery-code-error" className="mt-1.5 text-sm text-red-700">{fieldErrors.code}</p>}
-    </div>
-    <RecoveryPassword name="password" label="Nouveau mot de passe" busy={busy} error={fieldErrors.password}/>
-    <RecoveryPassword name="confirmation" label="Confirmer le nouveau mot de passe" busy={busy} error={fieldErrors.confirmation}/>
-    <button type="submit" disabled={busy} className="bo-button-primary h-12 w-full rounded-lg font-semibold">
-      {busy && <LoaderCircle aria-hidden="true" className="size-4 shrink-0 motion-safe:animate-spin"/>}
-      {busy ? 'Réinitialisation en cours…' : 'Réinitialiser le mot de passe'}
-    </button>
-    <span role="status" className="sr-only">{busy ? 'Réinitialisation en cours.' : ''}</span>
-    <button type="button" disabled={busy} onClick={() => onBack()} className="block w-full rounded py-1 text-center font-medium text-[#0057A8] hover:underline">Retour à la connexion</button>
+    {requested && <p role="status" className="rounded-lg border border-slate-200 bg-slate-50 p-3 leading-relaxed text-slate-700">
+      {demo?'Si cette adresse correspond à un compte éligible et vérifié, un message simulé est disponible dans la boîte de réception démo.':'Si cette adresse correspond à un compte éligible et vérifié, un lien personnel vous parviendra. Consultez votre messagerie et les courriers indésirables. En l’absence de message, contactez le responsable de la plateforme.'}
+    </p>}
+    {error && <p role="alert" className="text-red-800">{error}</p>}
+    <button disabled={busy || requested} className="bo-button-primary h-11 w-full">{busy ? 'Demande en cours…' : 'Envoyer le lien de récupération'}</button>
+    <button type="button" disabled={busy} onClick={()=>onBack()} className="block w-full text-center font-medium text-[#0057A8]">Retour à la connexion</button>
   </form>;
 }
 
-function RecoveryPassword({ name, label, busy, error }: {
+export function RecoveryPassword({ name, label, busy, error }: {
   name: 'password' | 'confirmation'; label: string; busy: boolean; error?: string;
 }) {
   const [visible, setVisible] = useState(false);

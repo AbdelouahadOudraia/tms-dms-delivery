@@ -3,13 +3,13 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
-export default defineConfig(() => {
+export default defineConfig(({mode}) => {
   return {
     plugins: [react(), tailwindcss(), {
       name: 'sales-synchronization',
       async configureServer(server) {
         const { createSalesApi } = await import('./server/sales/api');
-        const sales = createSalesApi(process.cwd());
+        const sales = createSalesApi(process.cwd(), undefined, mode === 'demo' ? 'demo' : mode === 'tenant-test' ? 'local-test' : 'standard');
         server.middlewares.use('/api/sales', sales.app);
         server.httpServer?.once('close', sales.close);
       },

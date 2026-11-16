@@ -1,9 +1,10 @@
 import type { SalesApiSettings, SalesDossier, SalesLine } from '../../src/types/sales';
 import { readPublicJson } from './publicEndpoint';
 
+type RequestSignal = () => AbortSignal;
 export interface SalesConnector {
-  fetchDossiers(settings: SalesApiSettings, cursor: string | null, known?: SalesDossier[], token?: string): Promise<{ dossiers: SalesDossier[]; cursor: string | null }>;
-  test(settings: SalesApiSettings, token?: string): Promise<void>;
+  fetchDossiers(settings: SalesApiSettings, cursor: string | null, known?: SalesDossier[], token?: string, getSignal?: RequestSignal): Promise<{ dossiers: SalesDossier[]; cursor: string | null }>;
+  test(settings: SalesApiSettings, token?: string, getSignal?: RequestSignal): Promise<void>;
 }
 
 type Row = Record<string, unknown>;
@@ -52,14 +53,16 @@ export function validateSourceUrl(kind: string, url: string) {
   }
 }
 
-async function request(url: URL, token?: string, body?: object, publicOnly = false): Promise<unknown> {
+async function request(url: URL, token?: string, body?: object, publicOnly = false, getSignal?: RequestSignal): Promise<unknown> {
+  const timeout = AbortSignal.timeout(15000);
+  const signal = getSignal ? AbortSignal.any([getSignal(), timeout]) : timeout;
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (token) headers.Authorization = 'Bearer ' + token;
   if (body) headers['Content-Type'] = 'application/json';
   try {
-    if (publicOnly) return await readPublicJson(url, headers, body);
+    if (publicOnly) return await readPublicJson(url, headers, body, signal);
     const res = await fetch(url, { headers, method: body ? 'POST' : 'GET', body: body && JSON.stringify(body),
-      redirect: 'error', signal: AbortSignal.timeout(15000) });
+      redirect: 'error', signal });
     if (!res.ok) throw new Error('API commerciale : HTTP ' + res.status +
       ([401, 403].includes(res.status) ? ' (accès refusé).' : '.'));
     return await res.json();
@@ -76,9 +79,9 @@ function endpoint(settings: SalesApiSettings) {
 const statusNames: Record<string, string> = { REGLER: 'Payé', ANNULER: 'Annulé', CAISSE: 'En caisse',
   DRAFT: 'Brouillon', PENDING: 'En attente', EXPIRER: 'Expiré', VALIDER: 'Validé' };
 const status = (r: Row) => statusNames[str(r.statutCd)] || required(r.statutLb || r.statutCd);
-async function sellerPage(settings: SalesApiSettings, page: number, size: number, token: string | undefined, publicOnly: boolean) {
+async function sellerPage(settings: SalesApiSettings, page: number, size: number, token: string | undefined, publicOnly: boolean, getSignal?: RequestSignal) {
   const data = row(await request(endpoint(settings), token, { Page: page, PageSize: size, Filters: { IsArchive: false },
-    Sorts: { ColumnSort: 'Id', isDescending: false } }, publicOnly));
+    Sorts: { ColumnSort: 'Id', isDescending: false } }, publicOnly, getSignal));
   const total = number(data.totalCount);
   if (!Array.isArray(data.liste) || !Number.isSafeInteger(total)) throw shapeError();
   return { rows: data.liste.map(row), total };
@@ -105,13 +108,13 @@ function sellerDossier(r: Row, settings: SalesApiSettings): SalesDossier {
     instructions: str(r.commentaire) };
 }
 
-async function sellerBatch(settings: SalesApiSettings, known: SalesDossier[], token: string | undefined, publicOnly: boolean) {
+async function sellerBatch(settings: SalesApiSettings, known: SalesDossier[], token: string | undefined, publicOnly: boolean, getSignal?: RequestSignal) {
     const existing = new Map(known.filter(s => s.systemId === 'seller').map(s => [s.id, s]));
     const dossiers: SalesDossier[] = [];
     const seen = new Set<string>();
     let page = 1, count = 0;
     do {
-      const { rows, total } = await sellerPage(settings, page++, 100, token, publicOnly);
+      const { rows, total } = await sellerPage(settings, page++, 100, token, publicOnly, getSignal);
       for (const summary of rows) {
         const id = required(summary.id);
         if (seen.has(id)) throw new Error('La liste Seller a changé pendant la lecture. Relancez la synchronisation.');
@@ -124,7 +127,7 @@ async function sellerBatch(settings: SalesApiSettings, known: SalesDossier[], to
         }
         const url = new URL('vente', endpoint(settings));
         url.searchParams.set('search', id);
-        const detail = row(await request(url, token, undefined, publicOnly));
+        const detail = row(await request(url, token, undefined, publicOnly, getSignal));
         if (str(detail.id) !== id) throw shapeError();
         dossiers.push(sellerDossier(detail, settings));
       }
@@ -135,10 +138,10 @@ async function sellerBatch(settings: SalesApiSettings, known: SalesDossier[], to
     return { dossiers, cursor: null };
 }
 
-async function standardBatch(settings: SalesApiSettings, cursor: string | null, token: string | undefined, publicOnly: boolean) {
+async function standardBatch(settings: SalesApiSettings, cursor: string | null, token: string | undefined, publicOnly: boolean, getSignal?: RequestSignal) {
   const url = endpoint(settings);
   if (cursor) url.searchParams.set('cursor', cursor);
-  const payload = await request(url, token, undefined, publicOnly);
+  const payload = await request(url, token, undefined, publicOnly, getSignal);
   const batch = Array.isArray(payload) ? { dossiers: payload, cursor: null } : row(payload);
   if (!Array.isArray(batch.dossiers) || (batch.cursor != null && typeof batch.cursor !== 'string')) throw shapeError();
   const dossiers = batch.dossiers.map((entry): SalesDossier => {
@@ -160,12 +163,12 @@ async function standardBatch(settings: SalesApiSettings, cursor: string | null, 
 function connectors(publicOnly: boolean): Record<SalesApiSettings['connectorId'], SalesConnector> {
   return {
     seller: {
-      fetchDossiers: (settings, _cursor, known = [], token) => sellerBatch(settings, known, token, publicOnly),
-      async test(settings, token) { await sellerPage(settings, 1, 1, token, publicOnly); },
+      fetchDossiers: (settings, _cursor, known = [], token, signal) => sellerBatch(settings, known, token, publicOnly, signal),
+      async test(settings, token, signal) { await sellerPage(settings, 1, 1, token, publicOnly, signal); },
     },
     standard: {
-      fetchDossiers: (settings, cursor, _known, token) => standardBatch(settings, cursor, token, publicOnly),
-      async test(settings, token) { await standardBatch(settings, null, token, publicOnly); },
+      fetchDossiers: (settings, cursor, _known, token, signal) => standardBatch(settings, cursor, token, publicOnly, signal),
+      async test(settings, token, signal) { await standardBatch(settings, null, token, publicOnly, signal); },
     },
   };
 }

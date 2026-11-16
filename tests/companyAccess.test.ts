@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createSalesApi } from '../server/sales/api';
+import {legacyAdmin,legacyCompany} from './support/legacyAccounts';
 
 test('espaces : création, accès limité, configuration et tournées persistantes par entreprise', async t => {
   const root = mkdtempSync(join(tmpdir(), 'tms-spaces-'));
@@ -18,10 +19,11 @@ test('espaces : création, accès limité, configuration et tournées persistant
     const data = await res.json(); assert.equal(res.status, expected, route + ' ' + JSON.stringify(data.error)); return data;
   }
   await call('/companies/alfa/state','GET','',undefined,401);
-  const setup = await call('/setup','POST','',{password:'test-admin-password'},201);
+  legacyAdmin(root,'test-admin-password');
+  const setup = await call('/login','POST','',{login:'admin@fixture.test',password:'test-admin-password'});
   const admin = setup.token;
-  for (const login of ['alfa','beta']) await call('/companies','POST', admin, { login, name: login.toUpperCase(), password: 'test-company-' + login },201);
-  const { token } = await call('/login','POST','',{login:'alfa',password:'test-company-alfa'});
+  for (const login of ['alfa','beta']) {legacyCompany(root,login.toUpperCase(),login,'test-company-'+login);await call('/companies/'+login+'/state','GET',admin);}
+  const { token } = await call('/login','POST','',{login:'alfa@fixture.test',password:'test-company-alfa'});
   const access = await call('/access','GET',token);
   assert.deepEqual(access.companies.map(c => c.id),['alfa']);
   for (const route of ['state','transport','test','sync','generate','settings','password']) {
@@ -48,7 +50,7 @@ test('espaces : création, accès limité, configuration et tournées persistant
   const b = await call('/companies/beta/state','GET',admin);
   assert.equal(b.settings.connectorId,'standard'); assert.equal(b.settings.url,'');
   assert.deepEqual(b.approvedSources,[]);
-  const beta = (await call('/login','POST','',{login:'beta',password:'test-company-beta'})).token;
+  const beta = (await call('/login','POST','',{login:'beta@fixture.test',password:'test-company-beta'})).token;
   await call('/companies/beta/settings','PUT',beta,selected,403);
   const data = { deliveries:[{id:'BL-1',customerName:'Alfa'}], tours:[{id:'TR-1'}], drivers:[{id:'DR-1',name:'Alfa'}], vehicles:[], addresses:[], zones:[], incidents:[], workflowSettings:{} };
   await call('/companies/alfa/transport','PUT',token,{revision:0,data});
@@ -63,13 +65,13 @@ test('espaces : création, accès limité, configuration et tournées persistant
   await call('/logout','POST',token); await call('/companies/alfa/state','GET',token,undefined,401);
   await new Promise<void>(resolve=>server.close(()=>resolve())); service.close();
   service=createSalesApi(root); server=service.app.listen(0,'127.0.0.1'); await once(server,'listening');
-  const fresh=await call('/login','POST','',{login:'alfa',password:'test-company-alfa'});
+  const fresh=await call('/login','POST','',{login:'alfa@fixture.test',password:'test-company-alfa'});
   assert.deepEqual((await call('/companies/alfa/transport','GET',fresh.token)).data,data);
   const restored = await call('/companies/alfa/state','GET',fresh.token);
   assert.equal(restored.settings.connectorId,'seller');
   assert.deepEqual(restored.approvedSources,[seller]);
   await call('/companies/beta/state','GET',fresh.token,undefined,403);
-  const newAdmin = (await call('/login','POST','',{login:'admin',password:'test-admin-password'})).token;
+  const newAdmin = (await call('/login','POST','',{login:'admin@fixture.test',password:'test-admin-password'})).token;
   await call('/companies/alfa/settings','PUT',fresh.token,{...selected, automatic:true, intervalSeconds:3600});
   const revoked = await call('/companies/alfa/sources','DELETE',newAdmin,seller);
   assert.equal(revoked.settings.automatic,false);

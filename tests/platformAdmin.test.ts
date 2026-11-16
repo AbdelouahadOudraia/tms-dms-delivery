@@ -8,8 +8,15 @@ import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createSalesApi } from '../server/sales/api';
 import { CompanyDirectory } from '../server/sales/companies';
+import {legacyAdmin,legacyCompany} from './support/legacyAccounts';
 
 test('administration : migration historique, autorisations, supervision minimale, renommage atomique et sécurité des comptes', async t => {
+  const migrationFlag=process.env.TMS_ALLOW_AUTH_MIGRATION;
+  const companyMigrationFlag=process.env.TMS_ALLOW_COMPANY_NAME_MIGRATION;
+  process.env.TMS_ALLOW_AUTH_MIGRATION='true';
+  process.env.TMS_ALLOW_COMPANY_NAME_MIGRATION='true';
+  t.after(()=>{if(migrationFlag===undefined)delete process.env.TMS_ALLOW_AUTH_MIGRATION;else process.env.TMS_ALLOW_AUTH_MIGRATION=migrationFlag;});
+  t.after(()=>{if(companyMigrationFlag===undefined)delete process.env.TMS_ALLOW_COMPANY_NAME_MIGRATION;else process.env.TMS_ALLOW_COMPANY_NAME_MIGRATION=companyMigrationFlag;});
   const root = mkdtempSync(join(tmpdir(),'tms-admin-test-'));
   const dataDir = join(root,'.data'); mkdirSync(dataDir);
   const file = join(dataDir,'sales-live.sqlite');
@@ -26,15 +33,16 @@ test('administration : migration historique, autorisations, supervision minimale
     assert.equal(res.status,expected,method+' '+path);return res.json();
   }
   const password='initial-admin-access';
-  const admin=(await call('POST','/setup','',{password},201)).token;
-  for(const id of ['alfa','beta']) await call('POST','/companies',admin,{name:id,login:id,password:'initial-password-'+id},201);
-  const alfa=(await call('POST','/login','',{login:'alfa',password:'initial-password-alfa'})).token;
-  const beta=(await call('POST','/login','',{login:'beta',password:'initial-password-beta'})).token;
+  legacyAdmin(root,password);
+  const admin=(await call('POST','/login','',{login:'admin@fixture.test',password})).token;
+  for(const id of ['alfa','beta']) {legacyCompany(root,id,id,'initial-password-'+id);await call('GET','/companies/'+id+'/state',admin);}
+  const alfa=(await call('POST','/login','',{login:'alfa@fixture.test',password:'initial-password-alfa'})).token;
+  const beta=(await call('POST','/login','',{login:'beta@fixture.test',password:'initial-password-beta'})).token;
   for(const [method,path] of [['GET','/admin/overview'],['PUT','/admin/password'],['PATCH','/companies/alfa'],['PATCH','/companies/beta']]) {
     await call(method,path,'',undefined,401);await call(method,path,alfa,undefined,403);
   }
   await call('PUT','/companies/beta/password',alfa,{password:'unauthorized-password'},403);
-  const code=operator.issueRecoveryCode('admin');
+  const code='obsolete-code-must-not-appear';
   const db = new DatabaseSync(file);
   const state=JSON.parse(String(db.prepare('SELECT state_json FROM sales_workspaces WHERE company_id=?').get('alfa').state_json));
   state.settings.url='https://private.example/orders';state.approvedSources=[{connectorId:'standard',url:state.settings.url}];
@@ -52,23 +60,24 @@ test('administration : migration historique, autorisations, supervision minimale
   const json=JSON.stringify(overview);
   for(const secret of [password,admin,code,'private-customer-record','private-diagnostic','private.example']) assert.ok(!json.includes(secret));
   assert.doesNotMatch(json,/password|digest|token|recovery|[a-f0-9]{32}:[a-f0-9]{64}/i);
-  await call('PATCH','/companies/alfa',admin,{name:'Beta'},400);
+  await call('PATCH','/companies/alfa',admin,{name:'Beta'});
+  assert.equal((await call('GET','/access',alfa)).companies[0].id,'alfa');
   await call('PATCH','/companies/alfa',admin,{name:'Alfa Transport',id:'beta'});
   const after=await call('GET','/companies/alfa/state',alfa);
   assert.equal(after.settings.companyName,'Alfa Transport');assert.deepEqual(after.dossiers,state.dossiers);
   assert.equal((await call('GET','/access',beta)).companies[0].name,'beta');
-  await call('POST','/companies',admin,{name:'Other',login:'alfa',password:'duplicate-name-test'},400);
-  await call('PUT','/companies/alfa/password',admin,{password:'changed-company-password'});
-  await call('GET','/companies/alfa/state',alfa,undefined,401);
-  await call('POST','/login','',{login:'alfa',password:'changed-company-password'});
+  assert.throws(()=>legacyCompany(root,'Other','alfa','duplicate-name-test'),/déjà utilisé/);
+  await call('PUT','/companies/alfa/password',admin,{password:'changed-company-password'},404);
+  await call('GET','/companies/alfa/state',alfa);
+  await call('POST','/login','',{login:'alfa@fixture.test',password:'initial-password-alfa'});
   await call('PUT','/admin/password',admin,{currentPassword:'incorrect',password:'new-admin-password'},400);
   await call('PUT','/admin/password',admin,{currentPassword:password,password:'short'},400);
   await call('PUT','/admin/password',admin,{currentPassword:password,password},400);
-  const second=(await call('POST','/login','',{login:'admin',password})).token;
+  const second=(await call('POST','/login','',{login:'admin@fixture.test',password})).token;
   await call('PUT','/admin/password',admin,{currentPassword:password,password:'new-admin-password'});
   for(const token of [admin,second]) await call('GET','/admin/overview',token,undefined,401);
-  assert.equal(operator.redeemRecoveryCode('admin',code,'forbidden-recovery'),false);
-  await call('POST','/login','',{login:'admin',password},401);await call('POST','/login','',{login:'admin',password:'new-admin-password'});
+  await call('POST','/password-recovery','',{login:'admin',code,password:'forbidden-recovery'},401);
+  await call('POST','/login','',{login:'admin@fixture.test',password},401);await call('POST','/login','',{login:'admin@fixture.test',password:'new-admin-password'});
   await call('GET','/companies/beta/state',beta);
   const malformed = await fetch(base+'/admin/password',{method:'PUT',headers:{'content-type':'application/json'},body:'{"password":"sensitive-fragment" trailing'});
   assert.equal(malformed.status,400);assert.ok(!(await malformed.text()).includes('sensitive-fragment'));

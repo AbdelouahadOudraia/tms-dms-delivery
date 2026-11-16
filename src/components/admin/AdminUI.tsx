@@ -31,9 +31,9 @@ export function Field({ label, hint, ...props }: InputHTMLAttributes<HTMLInputEl
     {hint && <span className="mt-1.5 block text-xs font-normal text-slate-600">{hint}</span>}
   </label>;
 }
-export function DataList<T>({ title, items, keyOf, searchText, headings, cells, empty, action }: {
+export function DataList<T>({ title, items, keyOf, searchText, headings, cells, empty, action,responsive=false,searchLabel='Rechercher par nom ou identifiant' }: {
   title: string; items: T[]; keyOf(item: T): string; searchText(item: T): string; headings: string[];
-  cells(item: T): ReactNode[]; empty: string; action?: ReactNode;
+  cells(item: T): ReactNode[]; empty: string; action?: ReactNode;responsive?:boolean;searchLabel?:string;
 }) {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -44,11 +44,13 @@ export function DataList<T>({ title, items, keyOf, searchText, headings, cells, 
   const rows = filtered.slice((current - 1) * 10, current * 10);
   return <Panel title={title} action={action}>
     <div className="relative m-4 max-w-md sm:mx-6"><Search size={16} aria-hidden="true" className="absolute left-3 top-3 text-slate-500"/>
-      <input type="search" aria-label="Rechercher par nom ou identifiant" value={query} onChange={e => {setQuery(e.target.value);setPage(1);}}
-        placeholder="Rechercher par nom ou identifiant" className="bo-input h-10 w-full pl-9"/></div>
-    {rows.length ? <div className="overflow-x-auto"><table className="bo-table"><thead><tr>{headings.map(h => <th scope="col" key={h}>{h}</th>)}</tr></thead>
+      <input type="search" aria-label={searchLabel} value={query} onChange={e => {setQuery(e.target.value);setPage(1);}}
+        placeholder={searchLabel} className="bo-input h-10 w-full pl-9"/></div>
+    {rows.length ? <>
+      {responsive && <div className="divide-y divide-slate-100 md:hidden">{rows.map(item=><dl key={keyOf(item)} className="grid grid-cols-2 gap-3 p-4">{cells(item).map((cell,i)=><div key={headings[i]} className="min-w-0 break-words"><dt className="text-xs text-slate-500">{headings[i]}</dt><dd className="mt-1 text-sm">{cell}</dd></div>)}</dl>)}</div>}
+      <div className={(responsive?'hidden md:block ':'')+'overflow-x-auto'}><table className="bo-table"><thead><tr>{headings.map(h => <th scope="col" key={h}>{h}</th>)}</tr></thead>
       <tbody>{rows.map(item => <tr key={keyOf(item)}>{cells(item).map((cell,i) => <td key={headings[i]}>{cell}</td>)}</tr>)}</tbody>
-    </table></div> : <p className="p-6 text-sm text-slate-600">{query ? 'Aucun résultat pour cette recherche.' : empty}</p>}
+    </table></div></> : <p className="p-6 text-sm text-slate-600">{query ? 'Aucun résultat pour cette recherche.' : empty}</p>}
     {filtered.length > 0 && <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-4 py-3 text-xs text-slate-600 sm:px-6">
       <span>{(current-1)*10+1}–{Math.min(current*10,filtered.length)} sur {filtered.length}</span>
       {pages > 1 && <div className="flex items-center gap-3"><button className="bo-button-secondary" aria-label="Page précédente" disabled={current===1} onClick={() => setPage(current-1)}><ChevronLeft size={15}/></button>

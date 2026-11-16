@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { api, companyPath, networkMessage, sessionExpiredMessage, sessionKey, type Company, type TransportSnapshot } from './companyApi';
 import { PlatformLogin } from '../components/PlatformLogin';
+import { PlatformSetup } from '../components/PlatformSetup';
+import {EmailEnrollment} from '../components/EmailEnrollment';
 const AdminArea = React.lazy(() => import('../components/admin/AdminArea'));
 
-type Access = { setup: boolean; account: { role: 'admin' | 'company'; companyId: string | null } | null; companies: Company[] };
+type Access = { setup: boolean; account: { role: 'admin' | 'company'; companyId: string | null } | null; companies: Company[];requiresEmailVerification?:boolean;email?:string|null };
 interface Space { company: Company; admin: boolean; initial: TransportSnapshot; flush: React.MutableRefObject<() => Promise<void>>;
   manage(): void; logout(): void; report(error: string): void }
 const Context = createContext<Space | null>(null);
@@ -26,12 +28,13 @@ export function CompanyGate({ children }: { children: React.ReactNode }) {
   async function refresh(resume: boolean) {
     const data = await api<Access>('/access');
     if (!data.account) {
-      if (sessionStorage.getItem(sessionKey)) setError(sessionExpiredMessage);
+      if (!data.setup && sessionStorage.getItem(sessionKey)) setError(sessionExpiredMessage);
       setAccess(data); sessionStorage.removeItem(sessionKey); setSpace(null); return;
     }
     const resumeCompany = resume && !location.hash.startsWith('#/admin') && sessionStorage.getItem('tms.company');
     const company = data.companies.find(c => c.id === (data.account?.companyId || resumeCompany));
-    if (company) await open(company);
+    if (company && company.status !== 'disabled') await open(company);
+    else sessionStorage.removeItem('tms.company');
     setAccess(data);
   }
   async function action(fn: () => Promise<void>, networkMessage?: string) {
@@ -41,7 +44,7 @@ export function CompanyGate({ children }: { children: React.ReactNode }) {
     }
     finally { setBusy(false); }
   }
-  function authenticate(path: '/setup' | '/login', credentials: Record<string, FormDataEntryValue>) {
+  function authenticate(path: '/login', credentials: Record<string, FormDataEntryValue>) {
     setNotice('');
     return action(async () => {
       const result = await api<{ token: string }>(path, 'POST', credentials);
@@ -74,6 +77,7 @@ export function CompanyGate({ children }: { children: React.ReactNode }) {
     history.replaceState(null,'',location.pathname+location.search);
     setSpace(null); setNotice(''); await refresh(false);
   });
+  if (access?.account && access.requiresEmailVerification) return <EmailEnrollment email={access.email??null} logout={logout}/>;
   if (access?.account && space) return <Context.Provider value={{ ...space, admin: access.account.role === 'admin', flush,
     manage: () => void action(async () => {
       await flush.current();sessionStorage.removeItem('tms.company');
@@ -103,20 +107,15 @@ export function CompanyGate({ children }: { children: React.ReactNode }) {
       setAccess({setup:false,account:null,companies:[]});
     }}/>
   </React.Suspense>;
+  if (access?.setup) return <PlatformSetup busy={busy} error={error} clearError={()=>setError('')}
+    onCreate={async data => {
+      await api('/setup', 'POST', data);
+    }} onContinue={()=>void action(()=>refresh(false), networkMessage)}/>;
   return <main className="grid min-h-screen place-items-center bg-[#F5F7FA] p-4 text-[#1F2937]">
     <section className="bo-panel w-full max-w-md space-y-5 p-6">
-      <p className="text-sm text-[#0057A8]">TMS / DMS Delivery</p><h1 className="text-xl font-semibold">{access?.setup ? 'Créer le compte administrateur' : 'Ouverture de la plateforme'}</h1>
+      <p className="text-sm text-[#0057A8]">TMS / DMS Delivery</p><h1 className="text-xl font-semibold">Ouverture de la plateforme</h1>
       {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-      {access?.setup ? <form className="space-y-4" onSubmit={e => {
-        e.preventDefault(); void authenticate('/setup', Object.fromEntries(new FormData(e.currentTarget)));
-      }}>
-        <Field label="Identifiant" name="login" defaultValue="admin" readOnly/>
-        <Field label="Mot de passe (10 caractères minimum)" name="password" type="password" minLength={10}/>
-        <button className="bo-button-primary" disabled={busy}>Créer le compte</button>
-      </form> : <button onClick={() => void action(() => refresh(true), networkMessage)} disabled={busy}>Réessayer</button>}
+      <button onClick={() => void action(() => refresh(true), networkMessage)} disabled={busy}>Réessayer</button>
     </section>
   </main>;
-}
-function Field({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> & {label: string}) {
-  return <label className="block text-sm">{label}<input required className="bo-input mt-1 w-full" {...props}/></label>;
 }

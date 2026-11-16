@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createSalesApi } from '../server/sales/api';
+import {legacyAdmin,legacyAccess} from './support/legacyAccounts';
 import { DEFAULT_SALES_API } from '../src/utils/salesSynchronization';
 import { SALES_CONNECTORS } from '../server/sales/connectors';
 
@@ -40,14 +41,14 @@ test('API Seller : test en lecture seule, pagination, vente mixte, doublons et r
   const app = api.app.listen(0, '127.0.0.1'); await once(app, 'listening');
   t.after(() => { app.close(); api.close(); rmSync(root, { recursive: true, force: true }); });
   const origin = 'http://127.0.0.1:' + (app.address() as AddressInfo).port;
-  const setup = await fetch(origin + '/setup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'local-test-admin' }) });
-  assert.equal(setup.status, 201);
+  legacyAdmin(root,'local-test-admin');
+  const setup = await fetch(origin + '/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({login:'admin@fixture.test', password: 'local-test-admin' }) });
+  assert.equal(setup.status, 200);
   const { token } = await setup.json();
   const endpoint = origin + '/companies/test';
   const password = 'company-live-test';
-  assert.equal((await fetch(endpoint + '/password', { method: 'PUT', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
-    body: JSON.stringify({ password }) })).status, 200);
-  const login = await fetch(origin + '/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: 'test', password }) });
+  legacyAccess(root,'test',password);
+  const login = await fetch(origin + '/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: 'test@fixture.test', password }) });
   assert.equal(login.status, 200);
   const company = (await login.json()).token;
   const call = async (path: string, method = 'POST', body?: unknown) => {

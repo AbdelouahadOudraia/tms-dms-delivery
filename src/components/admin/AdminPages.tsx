@@ -1,8 +1,9 @@
-import { Activity, ArrowRight, Building2, Cable, ChevronRight, CircleAlert, ExternalLink, KeyRound, Plus } from 'lucide-react';
+import { Activity, ArrowRight, Building2, Cable, ChevronRight, CircleAlert, ExternalLink, KeyRound, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import type { AdminCompany, AdminOverview } from '../../types/administration';
+import type { AdminCompany, CompanyStatus } from '../../types/administration';
 import { adminLink, ConnectionBadge, DataList, detailLink, formatDate, Info, Panel } from './AdminUI';
-import { RenameCompany } from './AdminForms';
+import { CompanyEmailForm, ConfirmCompanyDeletion, ConfirmCompanyStatus, RenameCompany } from './AdminForms';
+import { SalesDialog, SalesPill } from '../backoffice/SalesUI';
 
 const linkClass = 'inline-flex items-center gap-1 font-medium text-[#0057a8] hover:underline';
 function CompanyLink({ company }: { company: AdminCompany }) {
@@ -12,6 +13,9 @@ const searchCompany = (c: AdminCompany) => c.name + ' ' + c.id;
 const typeName = (c: AdminCompany) => c.connection.state === 'empty' ? '—' : c.connection.kind === 'seller' ? 'Seller' : 'API standard';
 const testLabel = (test: boolean | null) => test === null ? 'À tester' : test ? 'Réussi' : 'Échec';
 const createButton = <a className="bo-button-primary" href={adminLink('entreprises/nouvelle')}><Plus size={16}/>Créer une entreprise</a>;
+function StatusBadge({ status }: { status: CompanyStatus }) {
+  return <SalesPill tone={status === 'active' ? 'green' : 'neutral'}>{status === 'active' ? 'Active' : 'Désactivée'}</SalesPill>;
+}
 
 export function Overview({ companies }: { companies: AdminCompany[] }) {
   const configured = companies.filter(c => c.connection.state === 'configured');
@@ -42,9 +46,15 @@ export function Overview({ companies }: { companies: AdminCompany[] }) {
 }
 
 export function Companies({ companies }: {companies: AdminCompany[]}) {
-  return <DataList title="Entreprises enregistrées" action={createButton} items={companies} keyOf={c=>c.id} searchText={searchCompany}
-    headings={['Entreprise','Identifiant','Création','Connexion commerciale']} empty="Aucune entreprise enregistrée."
-    cells={c=>[<CompanyLink company={c}/>,c.id,formatDate(c.createdAt,false),<ConnectionBadge connection={c.connection}/>]}/>;
+  const [status, setStatus] = useState('');
+  const actions = <div className="flex flex-wrap items-center gap-3">
+    <select aria-label="Filtrer par statut" className="bo-input" value={status} onChange={e=>setStatus(e.target.value)}>
+      <option value="">Tous les statuts</option><option value="active">Actives</option><option value="disabled">Désactivées</option>
+    </select>{createButton}</div>;
+  return <DataList title="Entreprises enregistrées" action={actions}
+    items={status ? companies.filter(c => c.status === status) : companies} keyOf={c=>c.id} searchText={searchCompany}
+    headings={['Entreprise','Identifiant','Statut','Création','Connexion commerciale']} empty={status ? 'Aucune entreprise avec ce statut.' : 'Aucune entreprise enregistrée.'}
+    cells={c=>[<CompanyLink company={c}/>,c.id,<StatusBadge status={c.status}/>,formatDate(c.createdAt,false),<ConnectionBadge connection={c.connection}/>]}/>;
 }
 export function Connections({ companies }: {companies: AdminCompany[]}) {
   return <DataList title="Connexions par entreprise" items={companies} keyOf={c=>c.id} searchText={searchCompany}
@@ -52,33 +62,68 @@ export function Connections({ companies }: {companies: AdminCompany[]}) {
     cells={c=>[<CompanyLink company={c}/>,typeName(c),<ConnectionBadge connection={c.connection}/>,c.connection.lastTest?<span>{testLabel(c.connection.lastTest.ok)}<small className="block text-slate-600">{formatDate(c.connection.lastTest.at)}</small></span>:'Aucun',
       c.connection.lastSyncAt?formatDate(c.connection.lastSyncAt):'Aucune',c.connection.error??'—']}/>;
 }
-export function Accounts({ data, reset }: {data: AdminOverview; reset(c: AdminCompany):void}) {
-  const byId = new Map(data.companies.map(c=>[c.id,c]));
-  return <DataList title="Comptes autorisés" items={data.accounts} keyOf={a=>a.login} searchText={a=>a.login+' '+(byId.get(a.companyId)?.name??'Administrateur')}
-    headings={['Identifiant','Rôle','Entreprise','Accès']} empty="Aucun compte enregistré."
-    cells={a=>{const c=byId.get(a.companyId);return [a.login,a.role==='admin'?'Administrateur plateforme':'Entreprise',
-      c?<CompanyLink company={c}/>:'Plateforme', c?<button className={linkClass} onClick={()=>reset(c)}><KeyRound size={14}/>Réinitialiser</button>:
-      <a className={linkClass} href={adminLink('parametres')}>Mon compte</a>];}}/>;
+function CompanyDeletion({ company, busy, done }: { company: AdminCompany; busy: boolean; done(): void }) {
+  const [showConditions, setShowConditions] = useState(false);
+  const [confirmation, setConfirmation] = useState<AdminCompany | null>(null);
+  const available = company.deletionRevision != null;
+  return <div className="border-t border-slate-100 p-5 sm:p-6">
+    <div className="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <p className="text-sm font-medium text-slate-800">La suppression d’un espace entreprise est irréversible.</p>
+        {available ? <p className="mt-1 text-sm text-slate-600">Base locale de test</p> : <button type="button" className={linkClass+' mt-1 text-sm'} aria-haspopup="dialog" onClick={()=>setShowConditions(true)}>
+          Pourquoi la suppression est-elle indisponible ?
+        </button>}
+      </div>
+      <button type="button" disabled={!available || busy} onClick={()=>setConfirmation(company)} aria-haspopup="dialog"
+        className="bo-button-secondary border-red-200 text-red-700 disabled:cursor-not-allowed">
+        <Trash2 size={15} aria-hidden="true"/>Supprimer définitivement
+      </button>
+    </div>
+    {available && confirmation && confirmation.deletionRevision === company.deletionRevision && confirmation.name === company.name &&
+      <ConfirmCompanyDeletion company={confirmation} close={()=>setConfirmation(null)} done={done}/>}
+    {showConditions && <SalesDialog title="Conditions de suppression" subtitle={company.name} onClose={()=>setShowConditions(false)}>
+      <p className="text-sm text-slate-700">Pour tester la suppression, créez une entreprise fictive dans l’administration locale de test, puis désactivez-la depuis sa fiche.</p>
+      <button type="button" className="bo-button-secondary mt-5" onClick={()=>setShowConditions(false)}>Annuler</button>
+    </SalesDialog>}
+  </div>;
 }
-export function Details({ company: c, open, reset, renamed, busy }: { company: AdminCompany; open(c: AdminCompany):void; reset(c: AdminCompany):void; renamed():void; busy:boolean }) {
+
+export function Details({ company: c, open, notify, onDeleted, busy }: {
+  company: AdminCompany; open(c: AdminCompany):void;
+  notify(message: string):void; onDeleted(c: AdminCompany):void; busy:boolean;
+}) {
   const [editing,setEditing] = useState(false);
+  const [requestedStatus, setRequestedStatus] = useState<CompanyStatus | null>(null);
+  const disabled = c.status === 'disabled';
   const s = c.connection;
   return <div className="space-y-5">
-    <div className="flex flex-wrap gap-3"><button className="bo-button-primary" disabled={busy} onClick={()=>open(c)}><ExternalLink size={15}/>Ouvrir l’espace TMS/DMS</button>
+    <div className="flex flex-wrap gap-3"><button className="bo-button-primary" disabled={busy || disabled} onClick={()=>open(c)}><ExternalLink size={15}/>Ouvrir l’espace TMS/DMS</button>
       <a href={adminLink('entreprises')} className="bo-button-secondary">Retour aux entreprises</a></div>
     <Panel title="Informations générales" action={<button className={linkClass+' text-sm'} onClick={()=>setEditing(!editing)}>{editing?'Annuler':'Modifier le nom'}</button>}>
-      <div className="p-5 sm:p-6">{editing ? <RenameCompany company={c} done={()=>{setEditing(false);renamed();}}/> :
+      <div className="p-5 sm:p-6">{editing ? <RenameCompany company={c} done={()=>{setEditing(false);notify('Nom de l’entreprise enregistré.');}}/> :
         <dl className="grid gap-5 sm:grid-cols-3"><Info label="Entreprise">{c.name}</Info><Info label="Identifiant d’espace">{c.id}</Info><Info label="Date de création">{formatDate(c.createdAt)}</Info></dl>}</div>
     </Panel>
     <Panel title="Configuration commerciale" action={<ConnectionBadge connection={s}/>}>
       <dl className="grid gap-6 p-5 sm:grid-cols-2 sm:p-6 lg:grid-cols-3"><Info label="Système commercial">{typeName(c)}</Info>
-        <Info label="Synchronisation">{s.state==='empty'?'—':s.automatic?'Automatique':'Manuelle'}</Info><Info label="Test de la configuration">{s.state==='configured'?testLabel(s.test):'—'}</Info>
+        <Info label="Synchronisation">{disabled?'Suspendue':s.state==='empty'?'—':s.automatic?'Automatique':'Manuelle'}</Info><Info label="Test de la configuration">{s.state==='configured'?testLabel(s.test):'—'}</Info>
         <Info label="Dernière synchronisation">{s.lastSyncAt?formatDate(s.lastSyncAt):'Aucune'}</Info><Info label="Dernière réussite">{s.lastSuccessAt?formatDate(s.lastSuccessAt):'Aucune'}</Info>
         <Info label="Erreur de synchronisation">{s.error ? s.error+' · '+s.failures+' échec(s) consécutif(s)' : 'Aucune en cours'}</Info>
         {s.lastTest && <Info label="Dernier test enregistré">{testLabel(s.lastTest.ok)} · {formatDate(s.lastTest.at)}</Info>}</dl>
     </Panel>
     <Panel title="Accès à l’espace"><div className="flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
-      <dl><Info label="Identifiant de connexion">{c.login??'Accès à définir'}</Info></dl><button className="bo-button-secondary" onClick={()=>reset(c)}><KeyRound size={15}/>{c.login?'Réinitialiser le mot de passe':'Définir le mot de passe'}</button>
+      <dl><Info label="Adresse e-mail de connexion">{c.email??'Adresse à renseigner'}{c.activationPending && <span className="mt-1 block text-xs text-amber-800">En attente d’activation par e-mail</span>}</Info></dl>
     </div></Panel>
+    <div key={(c.email??'')+'|'+(c.pendingEmail??'')}><CompanyEmailForm company={c} notify={notify}/></div>
+    <Panel title="Gestion de l’entreprise"><div className="flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
+      <div className="max-w-2xl"><dl><Info label="Statut de l’entreprise"><StatusBadge status={c.status}/></Info></dl>
+        <p className="mt-2 text-sm text-slate-600">La désactivation arrête les accès à cet espace et ses synchronisations. Elle conserve les données et ne modifie pas le blocage du compte, géré dans Comptes et accès.</p></div>
+      <button className="bo-button-secondary" disabled={busy} onClick={()=>setRequestedStatus(disabled ? 'active' : 'disabled')}>
+        {disabled ? 'Réactiver l’entreprise' : 'Désactiver l’entreprise'}
+      </button>
+    </div>
+      {disabled && <CompanyDeletion company={c} busy={busy} done={()=>onDeleted(c)}/>}
+    </Panel>
+    {requestedStatus && <ConfirmCompanyStatus company={c} status={requestedStatus} close={()=>setRequestedStatus(null)}
+      done={message=>{setRequestedStatus(null); notify(message);}}/>}
   </div>;
 }

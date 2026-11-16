@@ -29,11 +29,11 @@ export function validatePublicEndpoint(url: URL) {
 
 // Check the DNS results used by the TLS socket itself, including for Seller detail requests.
 // A separate preflight DNS lookup followed by fetch() would allow DNS rebinding.
-export async function readPublicJson(url: URL, headers: Record<string, string>, body?: object): Promise<unknown> {
+export async function readPublicJson(url: URL, headers: Record<string, string>, body?: object, signal = AbortSignal.timeout(15000)): Promise<unknown> {
   validatePublicEndpoint(url);
   return new Promise((resolve, reject) => {
     const req = httpsRequest(url, {
-      method: body ? 'POST' : 'GET', headers, agent: false, signal: AbortSignal.timeout(15000),
+      method: body ? 'POST' : 'GET', headers, agent: false, signal,
       lookup(host, options, callback) {
         dns.lookup(host, { all: true }).then(addresses => {
           if (!addresses.length || addresses.some(entry => !publicAddress(entry.address))) {
