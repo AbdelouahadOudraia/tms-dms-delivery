@@ -113,7 +113,7 @@ export function Details({ company: c, open, notify, onDeleted, busy }: {
     <Panel title="Accès à l’espace"><div className="flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
       <dl><Info label="Adresse e-mail de connexion">{c.email??'Adresse à renseigner'}{c.activationPending && <span className="mt-1 block text-xs text-amber-800">En attente d’activation par e-mail</span>}</Info></dl>
     </div></Panel>
-    <div key={(c.email??'')+'|'+(c.pendingEmail??'')}><CompanyEmailForm company={c} notify={notify}/></div>
+    <CompanyEmailForm company={c} notify={notify}/>
     <Panel title="Gestion de l’entreprise"><div className="flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
       <div className="max-w-2xl"><dl><Info label="Statut de l’entreprise"><StatusBadge status={c.status}/></Info></dl>
         <p className="mt-2 text-sm text-slate-600">La désactivation arrête les accès à cet espace et ses synchronisations. Elle conserve les données et ne modifie pas le blocage du compte, géré dans Comptes et accès.</p></div>

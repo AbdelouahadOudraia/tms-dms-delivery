@@ -3,11 +3,12 @@ import { api, companyPath, networkMessage, sessionExpiredMessage, sessionKey, ty
 import { PlatformLogin } from '../components/PlatformLogin';
 import { PlatformSetup } from '../components/PlatformSetup';
 import {EmailEnrollment} from '../components/EmailEnrollment';
+import {useAutoRefresh,mayApplyRefresh} from '../hooks/useAutoRefresh';
 const AdminArea = React.lazy(() => import('../components/admin/AdminArea'));
 
 type Access = { setup: boolean; account: { role: 'admin' | 'company'; companyId: string | null } | null; companies: Company[];requiresEmailVerification?:boolean;email?:string|null };
 interface Space { company: Company; admin: boolean; initial: TransportSnapshot; flush: React.MutableRefObject<() => Promise<void>>;
-  manage(): void; logout(): void; report(error: string): void }
+  manage(): void; logout(): void; report(error: string,previous?:string): void }
 const Context = createContext<Space | null>(null);
 export function useCompanySpace() { const value = useContext(Context); if (!value) throw new Error('Espace requis.'); return value; }
 
@@ -16,6 +17,7 @@ export function CompanyGate({ children }: { children: React.ReactNode }) {
   const [space, setSpace] = useState<{ company: Company; initial: TransportSnapshot } | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const latestAccess=useRef(access);latestAccess.current=access;
   const flush = useRef(async () => {});
   const loadVersion = useRef(0);
   async function open(company: Company) {
@@ -59,6 +61,35 @@ export function CompanyGate({ children }: { children: React.ReactNode }) {
     window.addEventListener('tms-session-expired', expired);
     return () => window.removeEventListener('tms-session-expired', expired);
   }, []);
+  useAutoRefresh('/access',async signal=>{
+    if(busy)return;
+    const data=await api<Access>('/access','GET',undefined,signal);
+    if(!mayApplyRefresh(signal))return;
+    // Recover an initial network failure without requiring a manual reload.
+    // Do not reopen a space that another initialization has already loaded.
+    if(!latestAccess.current) {
+      const resumeCompany=!location.hash.startsWith('#/admin')&&sessionStorage.getItem('tms.company');
+      const company=data.companies.find(item=>item.id===(data.account?.companyId||resumeCompany));
+      if(data.account&&company&&company.status!=='disabled') {
+        const initial=await api<TransportSnapshot>(companyPath(company.id)+'/transport','GET',undefined,signal);
+        if(!mayApplyRefresh(signal)||latestAccess.current)return;
+        sessionStorage.setItem('tms.company',company.id);setSpace({company,initial});
+      }
+      setError('');setAccess(data);return;
+    }
+    if(!data.account) {
+      if(sessionStorage.getItem(sessionKey))setError(sessionExpiredMessage);
+      sessionStorage.removeItem(sessionKey);setSpace(null);
+    } else {
+      setSpace(previous=>{
+        if(!previous)return previous;
+        const updated=data.companies.find(item=>item.id===previous.company.id);
+        if(!updated || updated.status==='disabled'){sessionStorage.removeItem('tms.company');return null;}
+        return JSON.stringify(updated)===JSON.stringify(previous.company)?previous:{...previous,company:updated};
+      });
+    }
+    setAccess(previous=>JSON.stringify(previous)===JSON.stringify(data)?previous:data);
+  },{enabled:access===null||Boolean(access.account||access.setup),interval:access?.account?15000:5000});
   useEffect(() => {
     if (!space || access?.account?.role !== 'admin') return;
     const backToAdmin = () => {
@@ -83,7 +114,7 @@ export function CompanyGate({ children }: { children: React.ReactNode }) {
       await flush.current();sessionStorage.removeItem('tms.company');
       history.replaceState(null,'', '#/admin/entreprises');setSpace(null);
     }),
-    logout, report: setError }}>
+    logout, report: (message,previous)=>setError(current=>previous&&current!==previous?current:message) }}>
     {error && <div role="alert" className="fixed inset-x-0 bottom-0 z-[100] bg-red-50 p-3 text-center text-sm text-red-800">{error}</div>}
     <React.Fragment key={space.company.id}>{children}</React.Fragment>
   </Context.Provider>;
@@ -110,7 +141,7 @@ export function CompanyGate({ children }: { children: React.ReactNode }) {
   if (access?.setup) return <PlatformSetup busy={busy} error={error} clearError={()=>setError('')}
     onCreate={async data => {
       await api('/setup', 'POST', data);
-    }} onContinue={()=>void action(()=>refresh(false), networkMessage)}/>;
+    }}/>;
   return <main className="grid min-h-screen place-items-center bg-[#F5F7FA] p-4 text-[#1F2937]">
     <section className="bo-panel w-full max-w-md space-y-5 p-6">
       <p className="text-sm text-[#0057A8]">TMS / DMS Delivery</p><h1 className="text-xl font-semibold">Ouverture de la plateforme</h1>

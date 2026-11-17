@@ -29,7 +29,8 @@ export const OrdersScreen: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [optimizedOrderIds, setOptimizedOrderIds] = useState<string[]>([]);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [selectedDelivery, setSelectedDelivery] = useState<Delivery | null>(null);
+  const [selection, setSelectedDelivery] = useState<Delivery | null>(null);
+  const selectedDelivery=deliveries.find(delivery=>delivery.id===selection?.id)??null;
 
   const unassignedDeliveries = useMemo(
     () => deliveries.filter((delivery) => !delivery.tourId && !delivery.driverId),

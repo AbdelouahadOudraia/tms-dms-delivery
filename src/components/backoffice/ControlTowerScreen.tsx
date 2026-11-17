@@ -66,7 +66,7 @@ const buildTourMapOverlay = (tourDeliveries: Delivery[]) => {
 };
 
 export const ControlTowerScreen: React.FC = () => {
-  const { tours, deliveries, drivers, vehicles } = useTms();
+  const { tours, deliveries, drivers, vehicles, transportUpdatedAt } = useTms();
   const [selectedTourId, setSelectedTourId] = useState(tours[0]?.id || '');
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [dateFilter, setDateFilter] = useState(tours[0]?.date || '15 Septembre 2026');
@@ -75,10 +75,9 @@ export const ControlTowerScreen: React.FC = () => {
   const [driverFilter, setDriverFilter] = useState('Tous');
   const [vehicleFilter, setVehicleFilter] = useState('Tous');
   const [statusFilter, setStatusFilter] = useState('Toutes');
-  const [lastUpdated, setLastUpdated] = useState('10:42');
-  const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
 
   const dateOptions = useMemo(() => Array.from(new Set(tours.map((tour) => tour.date))), [tours]);
+  useEffect(()=>{if(dateOptions.length&&!dateOptions.includes(dateFilter))setDateFilter(dateOptions[0]);},[dateOptions,dateFilter]);
   const zoneOptions = useMemo(() => ['Tous', ...Array.from(new Set(tours.map((tour) => tour.zone)))], [tours]);
   const driverOptions = useMemo(
     () => [
@@ -104,13 +103,6 @@ export const ControlTowerScreen: React.FC = () => {
     ],
     [tours, vehicles]
   );
-
-  const handleRefresh = () => {
-    const time = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-    setLastUpdated(time);
-    setRefreshMessage('Données de démonstration actualisées.');
-    setTimeout(() => setRefreshMessage(null), 2500);
-  };
 
   const handleResetFilters = () => {
     setDateFilter(tours[0]?.date || '15 Septembre 2026');
@@ -176,13 +168,10 @@ export const ControlTowerScreen: React.FC = () => {
         subtitle="Suivi opérationnel des tournées et livraisons"
         actions={
           <>
-            <span className="hidden text-[13px] text-[#64748B] lg:inline">Dernière actualisation : {lastUpdated}</span>
-            <button onClick={handleRefresh} className="bo-button-secondary"><span className="material-symbols-outlined text-[18px]">refresh</span>Actualiser</button>
+            <span className="hidden text-[13px] text-[#64748B] lg:inline">Dernière actualisation : {transportUpdatedAt?new Date(transportUpdatedAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'En attente'}</span>
           </>
         }
       />
-
-      {refreshMessage && <div className="mb-4 rounded-md border border-[#BBF7D0] bg-[#F0FDF4] px-3 py-2 text-[13px] font-medium text-[#166534]">{refreshMessage}</div>}
 
       <FilterBar action={<button onClick={handleResetFilters} className="text-[13px] font-medium text-[#0057A8]">Réinitialiser</button>}>
         <FilterField label="Date">

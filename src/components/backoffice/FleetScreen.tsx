@@ -13,8 +13,10 @@ export const FleetScreen: React.FC<FleetScreenProps> = ({ defaultTab = 'drivers'
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('Tous');
   const [showAdd, setShowAdd] = useState(false);
-  const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
-  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [driverSelection, setSelectedDriver] = useState<Driver | null>(null);
+  const [vehicleSelection, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const selectedDriver=drivers.find(driver=>driver.id===driverSelection?.id)??null;
+  const selectedVehicle=vehicles.find(vehicle=>vehicle.id===vehicleSelection?.id)??null;
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [license, setLicense] = useState('Permis C');

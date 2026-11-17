@@ -1,5 +1,6 @@
 import { useCompanySpace } from '../../context/CompanySpace';
 import React, { useState } from 'react';
+import {useServerDraft} from '../../hooks/useServerDraft';
 import { useTms } from '../../context/TmsContext';
 import { getSaleEligibilityError, getSaleGenerationState, getSaleKey, getSaleRemaining, getSalesDossiersToConvert } from '../../utils/salesWorkflow';
 import type { CommercialSource, SalesApiSettings, SalesDossier } from '../../types/sales';
@@ -86,7 +87,7 @@ export const SalesScreen: React.FC = () => {
 const SalesApiDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const { admin, manage } = useCompanySpace();
   const { sales } = useTms();
-  const [draft, setDraft] = useState({ ...sales.settings });
+  const [draft, setDraft] = useServerDraft(sales.settings);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
   const sources = sales.approvedSources ?? [];

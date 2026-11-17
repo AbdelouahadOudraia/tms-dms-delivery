@@ -31,6 +31,27 @@ export function createSalesApi(root: string, legacyCompany = process.env.TMS_COM
   const inbox=demoMode?new DemoMailbox(file):null;
   const mail = inbox ?? configureMail(localTest);
   let closed = false;
+  let notificationEpoch=0,notifying:Promise<void>|null=null;
+  async function flushUnblockNotices() {
+    if(closed||!mail)return;
+    if(notifying)return notifying;
+    const epoch=notificationEpoch;
+    notifying=(async()=>{
+      for(let count=0;count<20&&!closed&&epoch===notificationEpoch;count++) {
+        const notice=directory.unblockRequests.claimNotice();if(!notice)break;
+        try {
+          const recipient=directory.unblockRequests.resolveNoticeRecipient(notice.id,notice.lease);
+          if(!recipient||!directory.unblockRequests.noticeIsCurrent(notice.id,notice.lease))throw new Error('Adresse remplacée.');
+          await mail.check();if(closed||epoch!==notificationEpoch)break;
+          if(!directory.unblockRequests.noticeIsCurrent(notice.id,notice.lease))throw new Error('Adresse remplacée.');
+          await mail.sendNotice(String(recipient),notice.subject,notice.body);
+          if(!closed)directory.unblockRequests.noticeDelivered(notice.id,notice.lease,true);
+        } catch {if(!closed)directory.unblockRequests.noticeDelivered(notice.id,notice.lease,false);}
+      }
+    })().finally(()=>{notifying=null;});
+    return notifying;
+  }
+  const noticeTimer=setInterval(()=>{void flushUnblockNotices().catch(()=>{});},60000);noticeTimer.unref();
   async function sendLink(ticket: {address:string;token:string;login:string}, purpose: EmailPurpose) {
     try { await mail.send(ticket.address,ticket.token,purpose,ticket.login); }
     catch {
@@ -110,12 +131,12 @@ export function createSalesApi(root: string, legacyCompany = process.env.TMS_COM
     app.post('/demo/messages/:id/expire',(req,res)=>{
       const token=inbox.token(req.params.id);
       if(!token) return res.status(404).json({error:'Message de démonstration introuvable.'});
-      directory.emailRecovery.deliveryFailed(token);res.json({});
+      directory.emailRecovery.deliveryFailed(token);directory.unblockRequests.deliveryFailed(token);res.json({});
     });
     app.post('/demo/reset',(req,res)=>{
       if(req.body?.confirmation!=='REINITIALISER LA DEMO') return res.status(400).json({error:'Confirmez la réinitialisation des seules données de démonstration.'});
       for(const {service} of services.values()) service.close();
-      services.clear();directory.resetDemo();inbox.clear();for(const reset of limiterResets) reset();res.json({});
+      services.clear();notificationEpoch++;directory.resetDemo();inbox.clear();for(const reset of limiterResets) reset();res.json({});
     });
   }
   app.post('/setup', rateLimit(10,true), async (req,res,next) => {
@@ -136,7 +157,8 @@ export function createSalesApi(root: string, legacyCompany = process.env.TMS_COM
       res.status(201).json({pending:true});
     } catch (error) {next(error);}
   });
-  app.post('/login', limitLoginAttempts(demoMode?limiterResets:undefined), (req,res) => {
+  const loginLimiter=limitLoginAttempts(demoMode?limiterResets:undefined);
+  app.post('/login', loginLimiter, (req,res) => {
     try {
       const token = directory.login(req.body?.login, req.body?.password);
       if (!token) return res.status(401).json({ error: loginErrorMessages.invalidCredentials });
@@ -148,6 +170,22 @@ export function createSalesApi(root: string, legacyCompany = process.env.TMS_COM
         return res.status(403).json({error:error.message,code:'ACCOUNT_SUSPENDED'});
       res.status(500).json({ error: 'Une erreur technique empêche la connexion. Réessayez plus tard.' });
     }
+  });
+  app.post('/account-unblock/request',loginLimiter,rateLimit(6,true),async(req,res,next)=>{
+    if(!mail)return res.status(503).json({error:mailUnavailable});
+    try {
+      await mail.check();
+      const result=directory.unblockRequests.issue(req.body?.login,req.body?.password);
+      if(result.state==='verification_required'&&result.ticket) {
+        try {await mail.sendUnblockVerification(result.ticket.address,result.ticket.token);}
+        catch {directory.unblockRequests.deliveryFailed(result.ticket.token);return res.status(503).json({error:'L’envoi du lien de confirmation est indisponible. Réessayez plus tard.'});}
+      }
+      res.status(202).json({state:result.state});
+    } catch(error){if(error instanceof AccountAccessError)return next(error);res.status(503).json({error:mailUnavailable});}
+  });
+  app.post('/account-unblock/verify',rateLimit(10),async(req,res,next)=>{
+    try {const result=directory.unblockRequests.confirm(req.body?.token);void flushUnblockNotices().catch(()=>{});res.json(result);}
+    catch(error){next(error);}
   });
   app.post('/company-email/request',rateLimit(6,true),async (req,res,next)=>{
     if (!mail) return res.status(503).json({error:mailUnavailable});
@@ -212,9 +250,15 @@ export function createSalesApi(root: string, legacyCompany = process.env.TMS_COM
   };
   app.get('/admin/overview', admin, (req,res) => res.json(directory.adminOverview(auth(req))));
   app.get('/admin/accounts/:login',admin,(req,res)=>res.json(directory.accountDetails(auth(req),req.params.login)));
+  app.get('/admin/unblock-requests',admin,(req,res)=>res.json(directory.listUnblockRequests(auth(req))));
+  app.put('/admin/unblock-requests/:id',admin,rateLimit(15,true),async(req,res,next)=>{
+    try {directory.decideUnblock(auth(req),req.params.id,req.body?.decision,req.body?.revision);void flushUnblockNotices().catch(()=>{});res.json(directory.listUnblockRequests(auth(req)).find(request=>request.id===req.params.id));}
+    catch(error){next(error);}
+  });
   app.put('/admin/accounts/:login/status',admin,rateLimit(15,true),(req,res)=>{
     if(!['active','suspended'].includes(req.body?.status))return res.status(400).json({error:'Statut de compte invalide.'});
-    res.json(directory.manageAccountAccess(auth(req),req.params.login,req.body.status,req.body?.revision));
+    const result=directory.manageAccountAccess(auth(req),req.params.login,req.body.status,req.body?.revision);
+    void flushUnblockNotices().catch(()=>{});res.json(result);
   });
   app.post('/admin/accounts/:login/revoke-sessions',admin,rateLimit(15,true),(req,res)=>
     res.json(directory.manageAccountAccess(auth(req),req.params.login,'revoke',req.body?.revision)));
@@ -339,7 +383,8 @@ export function createSalesApi(root: string, legacyCompany = process.env.TMS_COM
     }
     return res.status(400).json({ error: error instanceof Error && !('code' in error) ? error.message : 'Opération impossible.' });
   }) as express.ErrorRequestHandler);
-  return { app, close: () => { closed=true; for (const {service} of services.values()) service.close(); inbox?.close();directory.close(); store.close(); } };
+  void flushUnblockNotices().catch(()=>{});
+  return { app, close: () => { closed=true;notificationEpoch++;clearInterval(noticeTimer); for (const {service} of services.values()) service.close(); inbox?.close();directory.close(); store.close(); } };
 }
 function localHost(host: string) { return ['localhost','127.0.0.1','[::1]'].includes(host); }
 

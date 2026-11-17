@@ -27,8 +27,17 @@ export function configureMail(testMode: boolean) {
     connectionTimeout:10000, greetingTimeout:10000, socketTimeout:15000,
     disableFileAccess:true, disableUrlAccess:true,tls:{minVersion:'TLSv1.2'},
   });
+  async function sendNotice(address:string,subject:string,text:string) {
+    const info=await transport.sendMail({from:{name:'TMS/DMS Delivery',address:from},to:{name:'',address},subject:'TMS/DMS Delivery – '+subject,text});
+    if(!info.accepted?.length)throw new Error('Message refusé par le serveur SMTP.');
+  }
   return {
     async check() {await transport.verify();},
+    sendNotice,
+    async sendUnblockVerification(address:string,token:string) {
+      await sendNotice(address,'Confirmez votre demande de déblocage','Confirmez votre demande de déblocage du compte TMS/DMS en ouvrant ce lien personnel :\n\n'+origin.origin+'/#company-email/unblock/'+token+
+        '\n\nLe lien est valable 15 minutes et utilisable une seule fois. Cette confirmation transmet la demande à l’administrateur sans débloquer votre compte. Ignorez ce message si vous n’êtes pas à l’origine de cette demande.');
+    },
     async send(address: string, token: string, purpose: EmailPurpose, login: string) {
       const verification = purpose==='verify';
       const subject = verification ? 'Vérifiez votre adresse e-mail' : purpose==='activate' ? 'Activez votre accès entreprise' : 'Réinitialisez votre mot de passe';

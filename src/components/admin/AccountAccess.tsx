@@ -1,10 +1,12 @@
-import {useCallback,useEffect,useRef,useState} from 'react';
+import {useRef,useState} from 'react';
+import {useAutoRefresh,mayApplyRefresh} from '../../hooks/useAutoRefresh';
 import {LoaderCircle,ShieldCheck} from 'lucide-react';
 import {api,networkMessage} from '../../context/companyApi';
 import type {AdminAccount,AccountAccessDetails,AccountBlockReason,AccountStatus,SecurityAction} from '../../types/administration';
 import {accountHistoryLimit} from '../../types/administration';
 import {adminLink,detailLink,DataList,Info,Panel,formatDate} from './AdminUI';
 import {SalesDialog,SalesPill} from '../backoffice/SalesUI';
+import {UnblockRequestsPanel} from './UnblockRequestsPanel';
 
 const linkClass='font-medium text-[#0057a8] hover:underline';
 const accountLink=(login:string)=>adminLink('compte/'+encodeURIComponent(login));
@@ -19,6 +21,7 @@ const eventLabels:Record<SecurityAction,string>={
   account_activated:'Compte activé',password_reset:'Mot de passe réinitialisé',password_changed:'Mot de passe modifié',
   email_rebound:'Adresse réattribuée par maintenance autorisée',company_disabled:'Entreprise désactivée',company_reactivated:'Entreprise réactivée',
   company_registered:'Entreprise enregistrée',
+  unblock_requested:'Demande de déblocage transmise',unblock_accepted:'Demande de déblocage acceptée',unblock_rejected:'Demande de déblocage refusée',
 };
 function Status({account}:{account:AdminAccount}) {
   return <SalesPill tone={account.status==='active'?'green':'red'}>{account.status==='active'?'Actif':'Bloqué'}</SalesPill>;
@@ -31,8 +34,9 @@ function Access({account}:{account:AdminAccount}) {
   return <div className="max-w-64"><SalesPill tone={account.access.allowed?'green':'red'}>{account.access.allowed?'Autorisé':'Bloqué'}</SalesPill>
     {!account.access.allowed && <ul className="mt-1 space-y-1 text-xs text-slate-600">{account.access.reasons.map(reason=><li key={reason}>{reasonLabels[reason]}</li>)}</ul>}</div>;
 }
-export function Accounts({accounts}:{accounts:AdminAccount[]}) {
+export function Accounts({accounts,notify}:{accounts:AdminAccount[];notify(message:string):void}) {
   return <div className="space-y-4"><p className="text-sm text-slate-600">Gérez les accès de connexion. Bloquer un compte ne désactive pas son entreprise ni ses synchronisations automatiques.</p>
+    <UnblockRequestsPanel notify={notify}/>
     <DataList title="Comptes et autorisations" responsive items={accounts}
       keyOf={account=>account.login} searchLabel="Rechercher un compte, un e-mail ou une entreprise"
       searchText={account=>[account.login,account.email,account.pendingEmail,account.companyName].join(' ')}
@@ -42,18 +46,15 @@ export function Accounts({accounts}:{accounts:AdminAccount[]}) {
         <a href={account.role==='admin'?adminLink('parametres'):accountLink(account.login)} className={linkClass}>{account.role==='admin'?'Mon compte':'Gérer l’accès'}</a>]}/></div>;
 }
 
-export function AccountAccess({login,revision,refreshVersion,notify}:{login:string;revision:number;refreshVersion:number;notify(message:string):void}) {
+export function AccountAccess({login,notify}:{login:string;notify(message:string):void}) {
   const [data,setData]=useState<AccountAccessDetails|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
   const [action,setAction]=useState<{kind:AccountStatus;revision:number}|null>(null);
   const [busy,setBusy]=useState(false),[operationError,setOperationError]=useState('');
-  const requestVersion=useRef(0),lock=useRef(false);
-  const load=useCallback(async()=>{
-    const version=++requestVersion.current;setLoading(true);setError('');
-    try {const result=await api<AccountAccessDetails>(accountPath(login));if(version===requestVersion.current)setData(result);}
-    catch(cause){if(version===requestVersion.current)setError(cause instanceof TypeError?networkMessage:cause instanceof Error?cause.message:'Chargement impossible.');}
-    finally {if(version===requestVersion.current)setLoading(false);}
-  },[login]);
-  useEffect(()=>{void load();return()=>{requestVersion.current++;};},[load,revision,refreshVersion]);
+  const lock=useRef(false);
+  useAutoRefresh(accountPath(login),async signal=>{
+    const result=await api<AccountAccessDetails>(accountPath(login),'GET',undefined,signal);
+    if(mayApplyRefresh(signal)){setData(previous=>JSON.stringify(previous)===JSON.stringify(result)?previous:result);setLoading(false);setError('');}
+  },{onError:cause=>{setLoading(false);setError(cause instanceof TypeError?networkMessage:cause instanceof Error?cause.message:'Chargement impossible.');}});
   const account=data?.account;
   function confirm(kind:AccountStatus){setOperationError('');setAction({kind,revision:account.revision});}
   async function apply() {
@@ -70,8 +71,8 @@ export function AccountAccess({login,revision,refreshVersion,notify}:{login:stri
     {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p>}
     {loading && <p role="status" className="flex gap-2 text-sm text-slate-600"><LoaderCircle className="animate-spin" size={16}/>Chargement du compte…</p>}
     {account && <>
-      <Panel title="Informations du compte"><dl className="grid gap-5 p-5 sm:grid-cols-2 sm:p-6 xl:grid-cols-3">
-        <Info label="Identifiant du compte">{account.login}</Info><Info label="Type de compte">{account.role==='admin'?'Administrateur plateforme':'Entreprise'}</Info>
+      <Panel title="Informations du compte"><dl className="grid gap-5 p-5 sm:grid-cols-2 sm:p-6">
+        <Info label="Identifiant du compte">{account.login}</Info>
         <Info label="Entreprise associée">{account.companyName??'Plateforme'}</Info><Info label="Adresse e-mail"><span className="break-all">{account.email??'À renseigner'}</span></Info>
         <Info label="Vérification"><Verification account={account}/></Info>
         {account.pendingEmail && <Info label="Nouvelle adresse en attente"><span className="break-all">{account.pendingEmail}</span><span className="mt-1 block text-xs text-slate-500">L’adresse actuelle reste utilisable jusqu’à confirmation.</span></Info>}
@@ -84,7 +85,7 @@ export function AccountAccess({login,revision,refreshVersion,notify}:{login:stri
           <Info label="Accès effectif"><Access account={account}/></Info>
           {account.lastLoginAt && Number.isFinite(Date.parse(account.lastLoginAt)) && <Info label="Dernière connexion réussie">{formatDate(account.lastLoginAt)}</Info>}
         </dl><div className="space-y-3 border-t border-slate-100 p-5 sm:p-6">
-          {account.role==='company'?<><p className="text-sm text-slate-600">Le blocage concerne uniquement ce compte et ses sessions. Le statut de l’entreprise et ses synchronisations automatiques restent inchangés. Débloquer le compte ne réactive pas une entreprise désactivée.</p>
+          {account.role==='company'?<><p className="text-sm text-slate-600">Le blocage interdit l’accès au compte et révoque ses sessions, sans interrompre les synchronisations de l’entreprise. Le déblocage ne réactive pas une entreprise désactivée.</p>
             <div className="flex flex-wrap gap-3"><button className="bo-button-secondary" disabled={loading||busy} onClick={()=>confirm(account.status==='suspended'?'active':'suspended')}>
               {account.status==='suspended'?'Débloquer le compte':'Bloquer le compte'}</button></div></>:
             <p className="text-sm text-slate-600">Le compte administrateur plateforme ne peut pas être bloqué depuis cette interface.</p>}

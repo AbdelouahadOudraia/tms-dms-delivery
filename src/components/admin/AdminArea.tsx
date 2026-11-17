@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import {useAutoRefresh,mayApplyRefresh} from '../../hooks/useAutoRefresh';
 import {useDemoMode,deliveryNotice} from '../../context/DemoContext';
-import { Building2, Cable, ChevronRight, LayoutDashboard, LoaderCircle, LogOut, Menu, RefreshCw, Settings, ShieldCheck, Truck, UsersRound, X } from 'lucide-react';
+import { Building2, Cable, ChevronRight, LayoutDashboard, LoaderCircle, LogOut, Menu, Settings, ShieldCheck, Truck, UsersRound, X } from 'lucide-react';
 import { api, networkMessage } from '../../context/companyApi';
 import type { AdminCompany, AdminOverview } from '../../types/administration';
 import { Companies, Connections, Details, Overview } from './AdminPages';
@@ -25,21 +26,16 @@ export default function AdminArea({ open,logout,passwordChanged,busy,error }: Pr
   const [route,setRoute] = useState(readRoute), [menu,setMenu] = useState(false);
   const [data,setData] = useState<AdminOverview | null>(null), [loading,setLoading] = useState(true);
   const [loadError,setLoadError] = useState(''), [notice,setNotice] = useState('');
-  const version = useRef(0);
-  const reload = useCallback(async () => {
-    const ticket = ++version.current;
-    setLoading(true);setLoadError('');
-    try { const result = await api<AdminOverview>('/admin/overview'); if(ticket===version.current) setData(result); }
-    catch(e) { if(ticket===version.current) setLoadError(e instanceof TypeError ? networkMessage : e instanceof Error ? e.message : 'Chargement impossible.'); }
-    finally { if(ticket===version.current) setLoading(false); }
-  },[]);
+  const reload=useAutoRefresh('/admin/overview',async signal=>{
+    const result=await api<AdminOverview>('/admin/overview','GET',undefined,signal);
+    if(!mayApplyRefresh(signal))return;
+    setData(previous=>JSON.stringify(previous)===JSON.stringify(result)?previous:result);setLoading(false);setLoadError('');
+  },{onError:e=>{setLoading(false);setLoadError(e instanceof TypeError?networkMessage:e instanceof Error?e.message:'Chargement impossible.');}});
   useEffect(()=>{
-    void reload();
-    const onFocus = () => { void reload(); };
     const onRoute = () => { setRoute(readRoute());setMenu(false); };
-    window.addEventListener('focus',onFocus); window.addEventListener('hashchange',onRoute);
-    return ()=>{ version.current++;window.removeEventListener('focus',onFocus);window.removeEventListener('hashchange',onRoute); };
-  },[reload]);
+    window.addEventListener('hashchange',onRoute);
+    return ()=>window.removeEventListener('hashchange',onRoute);
+  },[]);
   const active = route.startsWith('compte/')?'comptes':route.startsWith('entreprise/') || route==='entreprises/nouvelle' ? 'entreprises' : route;
   const selected = data?.companies.find(c => 'entreprise/'+encodeURIComponent(c.id)===route);
   const selectedAccount=data?.accounts.find(account=>'compte/'+encodeURIComponent(account.login)===route);
@@ -76,7 +72,7 @@ export default function AdminArea({ open,logout,passwordChanged,busy,error }: Pr
     </header>
     <main className="mx-auto max-w-[1440px] space-y-5 px-4 py-6 sm:px-8 lg:py-8">
       <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="break-words text-2xl font-semibold tracking-tight text-[#123758] sm:text-3xl">{title}</h1>
-        <button className="bo-button-secondary" onClick={()=>void reload()} disabled={loading}><RefreshCw size={15} className={loading?'animate-spin':''}/>Actualiser</button></div>
+      </div>
       {(loadError || error) && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{loadError || error}</p>}
       {notice && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
       {!data && loading && <p role="status" className="flex items-center gap-2 text-sm text-slate-600"><LoaderCircle className="animate-spin" size={16}/>Chargement de l’administration…</p>}
@@ -85,12 +81,12 @@ export default function AdminArea({ open,logout,passwordChanged,busy,error }: Pr
         route==='entreprises' ? <Companies companies={data.companies}/> :
         route==='entreprises/nouvelle' ? <CreateCompany created={name=>{window.location.hash=adminLink('entreprises');notify('Entreprise créée : '+name+'. '+deliveryNotice(demo));}}/> :
         selected ? <div key={selected.id}><Details company={selected} open={open} busy={busy || loading} notify={notify} onDeleted={companyDeleted}/></div> :
-        route==='comptes' ? <Accounts accounts={data.accounts}/> :
-        selectedAccount ? <div key={selectedAccount.login}><AccountAccess login={selectedAccount.login} revision={selectedAccount.revision} refreshVersion={version.current} notify={notify}/></div> :
+        route==='comptes' ? <Accounts accounts={data.accounts} notify={notify}/> :
+        selectedAccount ? <div key={selectedAccount.login}><AccountAccess login={selectedAccount.login} notify={notify}/></div> :
         route==='connexions' ? <Connections companies={data.companies}/> :
         route==='parametres' ? <div className="max-w-3xl space-y-5"><Panel title="Mon compte" action={<button className="bo-button-secondary" disabled={busy} onClick={logout}><LogOut size={15}/>Se déconnecter</button>}>
           <dl className="grid gap-5 p-5 sm:grid-cols-3 sm:p-6"><Info label="Adresse e-mail de connexion">{data.session.email??data.session.login}</Info><Info label="Rôle">Administrateur plateforme</Info><Info label="Fin de session prévue">{formatDate(data.session.expiresAt)}</Info></dl>
-          </Panel><div key={(data.session.email??'')+'|'+(data.session.pendingEmail??'')}><AdminEmail email={data.session.email} emailVerified={data.session.emailVerified} pendingEmail={data.session.pendingEmail} notify={notify}/></div><AdminPassword changed={passwordChanged}/></div> :
+          </Panel><AdminEmail email={data.session.email} emailVerified={data.session.emailVerified} pendingEmail={data.session.pendingEmail} notify={notify}/><AdminPassword changed={passwordChanged}/></div> :
         <Panel title="Élément introuvable"><a className="m-5 inline-block text-blue-800 underline" href={adminLink('entreprises')}>Consulter les entreprises</a></Panel>}
       </>}
     </main></div>

@@ -11,12 +11,11 @@ type Props = {
   error: string;
   clearError(): void;
   onCreate(data: {password:string;email:string;setupSecret:string}): Promise<void>;
-  onContinue(): void;
 };
 const inputClass = 'bo-input h-12 w-full rounded-lg border-[#8291a5] pl-11 text-base placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0057A8] aria-invalid:border-red-700';
 const iconClass = 'pointer-events-none absolute left-3.5 top-1/2 size-[18px] -translate-y-1/2 text-slate-500';
 
-export function PlatformSetup({busy, error, clearError, onCreate, onContinue}: Props) {
+export function PlatformSetup({busy, error, clearError, onCreate}: Props) {
   const demo=useDemoMode();
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState(false);
@@ -74,10 +73,7 @@ export function PlatformSetup({busy, error, clearError, onCreate, onContinue}: P
         </div>}
         {created ? <div className="mt-7 space-y-5">
           <p role="status" className="rounded-lg border border-green-200 bg-green-50 px-3.5 py-3 text-sm text-green-800">{demo?'Message simulé disponible dans la boîte de réception démo. Ouvrez le lien de vérification avant de vous connecter.':'Le serveur SMTP a accepté le message de vérification. Ouvrez le lien reçu par e-mail avant de vous connecter. Il est valable 15 minutes.'}</p>
-          <button type="button" disabled={busy} onClick={onContinue} className="bo-button-primary h-12 w-full rounded-lg text-base font-semibold">
-            {busy && <LoaderCircle aria-hidden="true" size={17} className="motion-safe:animate-spin"/>}
-            {busy ? 'Ouverture en cours…' : 'Actualiser après vérification'}{!busy && <ArrowRight aria-hidden="true" size={17}/>}
-          </button>
+          <p className="text-sm text-slate-600">La page passera automatiquement à la connexion après vérification de votre adresse.</p>
           <button type="button" disabled={busy} onClick={()=>setCreated(false)} className="bo-button-secondary w-full">Renvoyer un lien</button>
         </div> : <form noValidate aria-busy={disabled} onSubmit={submit} className="mt-7 space-y-5" onChange={event => {
           const field = (event.target as HTMLInputElement).name;

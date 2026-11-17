@@ -1,5 +1,7 @@
 # Démonstration TMS/DMS sans service e-mail
 
+Pour tester une demande de déblocage avec lien simulé, acceptation ou refus et notification, suivre le [guide des demandes de déblocage](DEMANDES_DEBLOCAGE.md). Ce parcours réutilise la boîte Démo et **Comptes et accès**, sans e-mail réel ni déblocage automatique.
+
 ## Démarrer
 
 Depuis le dossier du projet :
@@ -61,7 +63,7 @@ L’ancien mot de passe et les anciennes sessions ne fonctionnent plus après la
 - Pour présenter un cas d’expiration sans attendre, choisir un message valide et cliquer sur **Faire expirer ce lien**. La vérification ou la récupération avec ce lien sera refusée.
 - Après expiration, demander un nouveau message. Les demandes répétées d’un même type pour le même compte sont espacées d’une minute.
 
-La boîte permet de sélectionner le destinataire et le type de message. **Actualiser** et un rafraîchissement périodique mettent à jour les états.
+La boîte permet de sélectionner le destinataire et le type de message. Les états se mettent à jour automatiquement tant que le panneau est ouvert, toutes les 5 secondes et après les opérations. Le bouton Actualiser est retiré ; la sélection du message reste conservée.
 
 ## 5. Recommencer depuis zéro
 
@@ -84,7 +86,7 @@ Un compte bloqué peut demander un nouveau lien de récupération avec son e-mai
 
 La connexion est limitée à 20 tentatives par minute et par IP, succès compris, et à 10 échecs par minute pour la même adresse canonique, toutes IP confondues. Une connexion réussie à un autre compte n’efface aucun échec. En cas de HTTP 429, attendre le délai indiqué par `Retry-After`. La remise à zéro explicite de la démo efface également ces compteurs.
 
-La fiche montre les blocages réels, la dernière connexion lorsqu’elle a été enregistrée et les 20 derniers événements du compte, sans mélanger la gestion d’entreprise. Le seul bouton **Actualiser** est dans l’en-tête. **Mon compte** mène aux paramètres du super administrateur. Le changement d’e-mail réutilise la fiche entreprise : l’ancienne adresse vérifiée reste utilisable jusqu’à confirmation de la nouvelle dans la boîte simulée. Voir le [guide Comptes et accès](COMPTES_ACCES.md) pour le scénario complet.
+La fiche montre les blocages réels, la dernière connexion lorsqu’elle a été enregistrée et les 20 derniers événements du compte, sans mélanger la gestion d’entreprise. Le champ Type de compte reste retiré de **Gérer l’accès** ; les boutons **Actualiser** sont désormais retirés de toutes les pages d’administration. Les informations et l’historique se mettent à jour après les opérations, depuis les autres sessions et au retour dans la fenêtre. Les formulaires conservent les saisies locales. **Mon compte** mène aux paramètres du super administrateur. Le changement d’e-mail réutilise la fiche entreprise : l’ancienne adresse vérifiée reste utilisable jusqu’à confirmation de la nouvelle dans la boîte simulée. Voir le [guide Comptes et accès](COMPTES_ACCES.md) et le [mécanisme partagé](ACTUALISATION_AUTOMATIQUE.md).
 
 ## Limites et séparation des modes
 

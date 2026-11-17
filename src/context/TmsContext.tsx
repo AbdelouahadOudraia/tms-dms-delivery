@@ -40,6 +40,7 @@ interface TmsContextType {
   addresses: DeliveryAddress[];
   zones: DeliveryZone[];
   lastRouteOptimization: RouteOptimizationResult | null;
+  transportUpdatedAt:number|null;
   currentDriver: Driver;
   currentTour: Tour | undefined;
   activeDriverId: string;
@@ -207,7 +208,10 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettings>(stored?.workflowSettings ?? { ...DEFAULT_WORKFLOW_SETTINGS, hubName: seed ? DEFAULT_WORKFLOW_SETTINGS.hubName : company.name });
   const transport = React.useMemo(() => ({ deliveries, tours, drivers, vehicles, incidents, addresses, zones, workflowSettings }),
     [deliveries, tours, drivers, vehicles, incidents, addresses, zones, workflowSettings]);
-  useTransportSave(transport);
+  const transportUpdatedAt=useTransportSave(transport,remote=>{
+    updateDeliveries(remote.deliveries);setTours(remote.tours);setDrivers(remote.drivers);setVehicles(remote.vehicles);
+    setIncidents(remote.incidents);setAddresses(remote.addresses);setZones(remote.zones);setWorkflowSettings(remote.workflowSettings);
+  });
   const sales = useSalesWorkflow(deliveries, (bls) => setDeliveries((previous) => {
     const known = new Set(previous.map((delivery) => delivery.id));
     return [...bls.filter((delivery) => !known.has(delivery.id)), ...previous];
@@ -890,6 +894,7 @@ export const TmsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addresses,
         zones,
         lastRouteOptimization,
+        transportUpdatedAt,
         currentDriver,
         currentTour,
         activeDriverId,

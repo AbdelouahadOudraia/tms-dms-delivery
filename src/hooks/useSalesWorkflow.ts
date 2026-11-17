@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Delivery } from '../types';
 import type { CommercialSource, SalesApiSettings, SalesBlRequest, SalesWorkspace } from '../types/sales';
 import { createSalesWorkspace } from '../utils/salesSynchronization';
+import {useAutoRefresh,mayApplyRefresh} from './useAutoRefresh';
 
 export const useSalesWorkflow = (_deliveries: Delivery[], onGenerated: (bls: Delivery[]) => void) => {
   const { company } = useCompanySpace();
@@ -32,21 +33,13 @@ export const useSalesWorkflow = (_deliveries: Delivery[], onGenerated: (bls: Del
 
   const request = <T,>(route: string, method = "GET", body?: unknown) => api<T>(companyPath(company.id) + route, method, body);
 
-  useEffect(() => {
-    mounted.current = true;
-    let stopped = false, refreshing = false;
-    const refresh = async () => {
-      if (refreshing || mutations.current > 0) return;
-      refreshing = true;
-      const version = generation.current;
-      try { const snapshot = await request<SalesWorkspace>('/state'); if (!stopped && version === generation.current) apply(snapshot); }
-      catch (error) { if (!stopped) setServiceError(error instanceof Error ? error.message : 'Le serveur de synchronisation est indisponible.'); }
-      finally { refreshing = false; }
-    };
-    void refresh();
-    const timer = setInterval(refresh, 1500);
-    return () => { stopped = true; mounted.current = false; clearInterval(timer); };
-  }, []);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
+  const refresh=useAutoRefresh(companyPath(company.id)+'/state',async signal=>{
+    if(mutations.current>0)return;
+    const version=generation.current;
+    const snapshot=await api<SalesWorkspace>(companyPath(company.id)+'/state','GET',undefined,signal);
+    if(mayApplyRefresh(signal)&&version===generation.current&&mutations.current===0)apply(snapshot);
+  },{onError:error=>setServiceError(error instanceof Error?error.message:'Le serveur de synchronisation est indisponible.')});
 
   const operation = async (route: string, method = 'POST', body?: unknown) => {
     const version = ++generation.current;
@@ -54,7 +47,7 @@ export const useSalesWorkflow = (_deliveries: Delivery[], onGenerated: (bls: Del
     setBusy(true);
     try { const snapshot = await request<SalesWorkspace>(route, method, body); if (version === generation.current) apply(snapshot); return snapshot; }
     catch (error) { setServiceError(error instanceof Error ? error.message : 'Opération impossible.'); throw error; }
-    finally { mutations.current--; generation.current++; if (mounted.current) setBusy(mutations.current > 0); }
+    finally { mutations.current--; generation.current++; if (mounted.current) {setBusy(mutations.current > 0);refresh();} }
   };
 
   const generateBls = async (requests: SalesBlRequest[]) => {
@@ -65,7 +58,7 @@ export const useSalesWorkflow = (_deliveries: Delivery[], onGenerated: (bls: Del
       const result = await request<{ state: SalesWorkspace; generated: Delivery[] }>('/generate', 'POST', { requests });
       if (version === generation.current) { apply(result.state); setSelectionIds([]); } return result.generated;
     } catch (error) { setServiceError(error instanceof Error ? error.message : 'Génération impossible.'); throw error; }
-    finally { mutations.current--; generation.current++; if (mounted.current) setBusy(mutations.current > 0); }
+    finally { mutations.current--; generation.current++; if (mounted.current) {setBusy(mutations.current > 0);refresh();} }
   };
 
   return { ...state, ready, selectionIds, busy, serviceError,

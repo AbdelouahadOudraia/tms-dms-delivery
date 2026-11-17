@@ -7,6 +7,7 @@ import {pathToFileURL} from 'node:url';
 import {CompanyDirectory} from './sales/companies';
 import {configureMail} from './sales/mail';
 import {testDatabasePath} from './sales/testDatabase';
+import {requireAuthMigrationApproval} from './sales/authMigration';
 
 // Server-operator maintenance only. Never imported by an HTTP route.
 export async function rebindEmail(root:string,testMode:boolean,login:string,email:string,ticket:string,actor:string) {
@@ -16,6 +17,7 @@ export async function rebindEmail(root:string,testMode:boolean,login:string,emai
     throw new Error('Compte ou référence de dossier de maintenance invalide.');
   const file=testMode?testDatabasePath(root):path.join(root,'.data','sales-live.sqlite');
   if(!existsSync(file)) throw new Error('Base absente. Aucune base ne sera créée par cette procédure.');
+  if(!testMode)requireAuthMigrationApproval(file);
   const mail=configureMail(testMode);
   if(!mail) throw new Error('Configurez le SMTP et l’URL publique avant la maintenance.');
   try {await mail.check();} catch {throw new Error('Service SMTP indisponible. Aucun changement effectué.');}

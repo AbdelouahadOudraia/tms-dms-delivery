@@ -3,6 +3,7 @@ import { ArrowRight, CircleAlert, Eye, EyeOff, LoaderCircle, LockKeyhole, UserRo
 import { api, networkMessage } from '../context/companyApi';
 import {useDemoMode} from '../context/DemoContext';
 import { PlatformBrand } from './PlatformBrand';
+import {loginErrorMessages,unblockRequestConfirmation} from '../types/authentication';
 
 type LoginProps = {
   busy: boolean;
@@ -15,6 +16,7 @@ const inputClass = 'bo-input h-12 w-full rounded-lg border-[#8291a5] pl-11 text-
 const inputIcon = 'pointer-events-none absolute left-3.5 top-1/2 size-[18px] -translate-y-1/2 text-slate-500';
 
 export function PlatformLogin({ busy, error, clearError, onLogin }: LoginProps) {
+  const demo=useDemoMode();
   const [visible, setVisible] = useState(false);
   const [recovery, setRecovery] = useState(false);
   const [loginHint, setLoginHint] = useState('');
@@ -24,6 +26,18 @@ export function PlatformLogin({ busy, error, clearError, onLogin }: LoginProps) 
   const loginInput = useRef<HTMLInputElement>(null);
   const passwordInput = useRef<HTMLInputElement>(null);
   const submitting = useRef(false);
+  const [unblockBusy,setUnblockBusy]=useState(false),[unblockMessage,setUnblockMessage]=useState(''),[unblockError,setUnblockError]=useState('');
+  const unblockLock=useRef(false);
+  async function requestUnblock() {
+    if(busy||unblockLock.current)return;
+    unblockLock.current=true;setUnblockBusy(true);setUnblockError('');
+    try {
+      const result=await api<{state:'pending'|'verification_required'}>('/account-unblock/request','POST',{
+        login:loginInput.current?.value.trim(),password:passwordInput.current?.value});
+      setUnblockMessage(result.state==='pending'?unblockRequestConfirmation:demo?'Un lien de confirmation simulé est disponible dans la boîte de réception Démo. Confirmez ce lien pour transmettre votre demande à l’administrateur.':'Un lien de confirmation a été envoyé à votre adresse e-mail vérifiée. Confirmez ce lien pour transmettre votre demande à l’administrateur.');
+    } catch(cause){setUnblockError(cause instanceof TypeError?networkMessage:cause instanceof Error?cause.message:'Demande impossible.');}
+    finally {unblockLock.current=false;setUnblockBusy(false);}
+  }
 
   function showRecovery() {
     clearError();
@@ -45,7 +59,7 @@ export function PlatformLogin({ busy, error, clearError, onLogin }: LoginProps) 
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || submitting.current) return;
+    if (busy || unblockBusy || submitting.current) return;
     setNotice('');
     const login = loginInput.current!.value.trim();
     const password = passwordInput.current!.value;
@@ -74,17 +88,22 @@ export function PlatformLogin({ busy, error, clearError, onLogin }: LoginProps) 
           {!recovery && <p className="mt-2 text-sm leading-relaxed text-slate-600">Plateforme de gestion du transport et des livraisons</p>}
 
           {recovery ? <PasswordRecovery loginHint={loginHint} onBack={returnToLogin}/> : <>
-          <form noValidate aria-busy={busy} onSubmit={submit} onChange={error ? clearError : undefined} className="mt-7 space-y-5">
+          <form noValidate aria-busy={busy||unblockBusy} onSubmit={submit} onChange={()=>{if(error)clearError();setUnblockMessage('');setUnblockError('');}} className="mt-7 space-y-5">
             {notice && <p role="status" className="rounded-lg border border-green-200 bg-green-50 px-3.5 py-3 text-sm text-green-800">{notice}</p>}
             {error && <div role="alert" className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 px-3.5 py-3 text-sm text-red-800">
               <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0"/><span>{error}</span>
+            </div>}
+            {error===loginErrorMessages.accountSuspended && <div className="space-y-3">
+              {unblockMessage?<p role="status" className="rounded-lg bg-blue-50 p-3 text-sm text-[#17446a]">{unblockMessage}</p>:
+                <button type="button" onClick={()=>void requestUnblock()} disabled={busy||unblockBusy} className="bo-button-secondary h-auto min-h-11 w-full px-3 py-2 text-center">{unblockBusy?'Envoi en cours…':'Demander le déblocage de mon compte'}</button>}
+              {unblockError&&<p role="alert" className="text-sm text-red-800">{unblockError}</p>}
             </div>}
             <div>
               <label htmlFor="platform-login-id" className="block text-sm font-semibold text-slate-700">Adresse e-mail</label>
               <div className="relative mt-2">
                 <UserRound aria-hidden="true" className={inputIcon}/>
                 <input ref={loginInput} id="platform-login-id" name="login" type="email" maxLength={254} defaultValue={loginHint} autoComplete="username" autoCapitalize="none" spellCheck={false}
-                  required readOnly={busy} placeholder="Saisissez votre adresse e-mail" aria-invalid={missing.login}
+                  required readOnly={busy||unblockBusy} placeholder="Saisissez votre adresse e-mail" aria-invalid={missing.login}
                   aria-describedby={missing.login ? 'platform-id-error' : undefined} className={inputClass}
                   onChange={() => {setEmailError('');setMissing(prev=>({...prev,login:false}));}}/>
               </div>
@@ -95,7 +114,7 @@ export function PlatformLogin({ busy, error, clearError, onLogin }: LoginProps) 
               <div className="relative mt-2">
                 <LockKeyhole aria-hidden="true" className={inputIcon}/>
                 <input ref={passwordInput} id="platform-login-password" name="password" type={visible ? 'text' : 'password'} autoComplete="current-password"
-                  required readOnly={busy} placeholder="Votre mot de passe" aria-invalid={missing.password}
+                  required readOnly={busy||unblockBusy} placeholder="Votre mot de passe" aria-invalid={missing.password}
                   aria-describedby={missing.password ? 'platform-password-error' : undefined} className={inputClass + ' pr-12'}
                   onChange={e => { if (missing.password && e.target.value) setMissing(prev => ({ ...prev, password: false })); }}/>
                 <button type="button" aria-label={visible ? 'Masquer le mot de passe' : 'Afficher le mot de passe'} aria-controls="platform-login-password"
@@ -107,7 +126,7 @@ export function PlatformLogin({ busy, error, clearError, onLogin }: LoginProps) 
               <div className="mt-2 text-right"><button type="button" disabled={busy} onClick={showRecovery}
                 className="rounded text-sm font-medium text-[#0057A8] underline-offset-4 hover:underline">Mot de passe oublié ?</button></div>
             </div>
-            <button type="submit" disabled={busy} className="bo-button-primary mt-1 h-12 w-full rounded-lg text-base font-semibold disabled:opacity-80">
+            <button type="submit" disabled={busy||unblockBusy} className="bo-button-primary mt-1 h-12 w-full rounded-lg text-base font-semibold disabled:opacity-80">
               {busy && <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin"/>}
               {busy ? 'Connexion en cours…' : 'Se connecter'}
               {!busy && <ArrowRight aria-hidden="true" size={17}/>}

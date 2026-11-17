@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { PageHeader } from '../common/BackofficeUI';
 import { useTms } from '../../context/TmsContext';
+import {useServerDraft} from '../../hooks/useServerDraft';
 
 const SettingSection: React.FC<{ title: string; description: string; children: React.ReactNode }> = ({ title, description, children }) => (
   <section className="border-b border-[#E2E8F0] py-6 first:pt-0 last:border-0 last:pb-0">
@@ -20,12 +21,12 @@ const ToggleRow: React.FC<{ title: string; description: string; checked: boolean
 
 export const SettingsScreen: React.FC = () => {
   const { workflowSettings, updateWorkflowSettings } = useTms();
-  const [gpsTolerance, setGpsTolerance] = useState(workflowSettings.gpsTolerance);
-  const [requirePhoto, setRequirePhoto] = useState(workflowSettings.requirePhoto);
-  const [requireSignature, setRequireSignature] = useState(workflowSettings.requireSignature);
-  const [delayThreshold, setDelayThreshold] = useState(workflowSettings.delayThreshold);
-  const [autoNotifyCustomer, setAutoNotifyCustomer] = useState(workflowSettings.autoNotifyCustomer);
-  const [hubName, setHubName] = useState(workflowSettings.hubName);
+  const [gpsTolerance, setGpsTolerance] = useServerDraft(workflowSettings.gpsTolerance);
+  const [requirePhoto, setRequirePhoto] = useServerDraft(workflowSettings.requirePhoto);
+  const [requireSignature, setRequireSignature] = useServerDraft(workflowSettings.requireSignature);
+  const [delayThreshold, setDelayThreshold] = useServerDraft(workflowSettings.delayThreshold);
+  const [autoNotifyCustomer, setAutoNotifyCustomer] = useServerDraft(workflowSettings.autoNotifyCustomer);
+  const [hubName, setHubName] = useServerDraft(workflowSettings.hubName);
   const [savedToast, setSavedToast] = useState(false);
 
   const handleSave = (event: React.FormEvent) => {

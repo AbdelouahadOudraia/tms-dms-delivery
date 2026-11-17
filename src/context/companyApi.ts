@@ -2,6 +2,7 @@ import type { Delivery, Tour, Driver, Vehicle, DeliveryAddress, DeliveryZone, In
 import type { WorkflowSettings } from './TmsContext';
 import type { CompanyStatus } from '../types/administration';
 import {loginErrorMessages} from '../types/authentication';
+import {announceDataChange,beginDataWrite} from '../utils/dataChanges';
 
 export interface Company { id: string; name: string; demo?: boolean; status?: CompanyStatus }
 export interface TransportState {
@@ -13,10 +14,12 @@ export const companyPath = (id: string) => '/companies/' + encodeURIComponent(id
 export const sessionKey = 'tms.access';
 export const sessionExpiredMessage = 'Votre session a expiré. Reconnectez-vous pour accéder à votre espace.';
 export const networkMessage = 'Impossible de joindre le serveur. Vérifiez votre connexion et réessayez.';
-export async function api<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
+export async function api<T>(path: string, method = 'GET', body?: unknown, signal?:AbortSignal): Promise<T> {
+  const finish=method==='GET'?()=>{}:beginDataWrite();
+  try {
   const token = sessionStorage.getItem(sessionKey);
-  const publicAuth = path === '/login' || path.startsWith('/company-email/') || path === '/setup';
-  const response = await fetch('/api/sales' + path, { method, cache: 'no-store', headers: {
+  const publicAuth = path === '/login' || path.startsWith('/company-email/') || path.startsWith('/account-unblock/') || path === '/setup';
+  const response = await fetch('/api/sales' + path, { method, signal, cache: 'no-store', headers: {
     ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
   }, body: body === undefined ? undefined : JSON.stringify(body) });
   if (response.status === 401 && !publicAuth && token && sessionStorage.getItem(sessionKey) === token) {
@@ -35,5 +38,7 @@ export async function api<T>(path: string, method = 'GET', body?: unknown): Prom
   if(path==='/login' && response.status===403 && result.code==='ACCOUNT_SUSPENDED')
     throw new Error(loginErrorMessages.accountSuspended);
   if (!response.ok) throw new Error(result.error || 'Opération refusée.');
+  if(method!=='GET')announceDataChange(path);
   return result as T;
+  } finally {finish();}
 }

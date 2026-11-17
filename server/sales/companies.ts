@@ -10,6 +10,8 @@ import { CompanyEmailRecovery } from './companyEmail';
 import {assertDemoDatabase,DEMO_APPLICATION_ID} from './demoDatabase';
 import {allowRepeatedCompanyNames,requireCompanyNameMigrationApproval} from './companySchema';
 import {loginErrorMessages} from '../../src/types/authentication';
+import {UnblockRequests} from './unblockRequests';
+import type {UnblockDecision} from '../../src/types/administration';
 
 export interface Company { id: string; name: string; demo?: boolean }
 export interface RegisteredCompany extends Company { status: CompanyStatus; statusRevision: number }
@@ -40,6 +42,7 @@ function matchesPassword(password: unknown, record: string) {
 
 export class CompanyDirectory {
   readonly emailRecovery: CompanyEmailRecovery;
+  readonly unblockRequests:UnblockRequests;
   private db: DatabaseSync;
   private sessions = new Map<string, { account: Account; login:string;verified:boolean;version:number;passwordRecord: string; revision: number; expires: number }>();
   constructor(file: string, private localTest = false, private demoMode=false) {
@@ -80,6 +83,13 @@ export class CompanyDirectory {
     try {
       initializeAccountSecurity(this.db);
       this.emailRecovery = new CompanyEmailRecovery(this.db, hash);
+      this.unblockRequests=new UnblockRequests(this.db,(email,password)=>{
+        if(typeof email!=='string')return null;
+        const login=this.emailRecovery.accountLogin(email),row=login&&this.accountRecord(login);
+        if(!row||!row.company||row.pending||!matchesPassword(password,String(row.password))||row.access_status!=='suspended')return null;
+        const profile=this.emailRecovery.profile(login);
+        return profile.emailVerified?{login,address:profile.email,version:Number(row.session_version),revision:Number(this.db.prepare('SELECT revision FROM account_access WHERE login=?').get(login).revision)}:null;
+      });
     } catch(error){this.db.close();throw error;}
   }
   private isTestDatabase() {
@@ -262,9 +272,18 @@ export class CompanyDirectory {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       if(this.account(token)?.role!=='admin')throw new AccountAccessError(403,'Accès réservé à l’administrateur plateforme.');
+      changed=this.applyAccountAccess(login,action,Number(revision),this.ownLogin(token));
+      if(action==='active')this.unblockRequests.completeManual(login,this.ownLogin(token));
+      this.db.exec('COMMIT');
+    } catch(error){this.db.exec('ROLLBACK');throw error;}
+    if(changed)for(const [key,session] of this.sessions)if(session.login===login)this.sessions.delete(key);
+    return this.accountDetails(token,login);
+  }
+  private applyAccountAccess(login:string,action:AccountStatus|'revoke',revision:number,actor:string) {
+      let changed=false;
       const target=this.db.prepare('SELECT a.company,x.status,x.revision FROM accounts a JOIN account_access x ON x.login=a.login WHERE a.login=?').get(login);
       if(!target)throw new AccountAccessError(404,'Compte introuvable.');
-      if(target.company==null || login===this.ownLogin(token))throw new AccountAccessError(400,'Cette action est réservée aux comptes entreprise.');
+      if(target.company==null || login===actor)throw new AccountAccessError(400,'Cette action est réservée aux comptes entreprise.');
       if(target.revision!==revision)throw new AccountAccessError(409,'Cet accès a été modifié. Actualisez sa fiche avant de recommencer.');
       if(action==='revoke' || target.status!==action) {
         changed=true;
@@ -274,12 +293,20 @@ export class CompanyDirectory {
           this.db.prepare('DELETE FROM company_email_links WHERE login=?').run(login);
           this.db.prepare('DELETE FROM password_recovery WHERE login=?').run(login);
         }
-        recordSecurityEvent(this.db,login,action==='revoke'?'sessions_revoked':action==='suspended'?'suspended':'reactivated',this.ownLogin(token));
+        recordSecurityEvent(this.db,login,action==='revoke'?'sessions_revoked':action==='suspended'?'suspended':'reactivated',actor);
       }
-      this.db.exec('COMMIT');
-    } catch(error){this.db.exec('ROLLBACK');throw error;}
-    if(changed)for(const [key,session] of this.sessions)if(session.login===login)this.sessions.delete(key);
-    return this.accountDetails(token,login);
+      return changed;
+  }
+  decideUnblock(token:string,id:string,decision:UnblockDecision,revision:unknown) {
+    if(this.account(token)?.role!=='admin')throw new AccountAccessError(403,'Accès réservé à l’administrateur plateforme.');
+    const login=this.unblockRequests.decide(id,decision,revision,this.ownLogin(token),()=>this.account(token)?.role==='admin',
+      (target,currentRevision,actor)=>this.applyAccountAccess(target,'active',currentRevision,actor));
+    if(decision==='accepted')for(const [key,session]of this.sessions)if(session.login===login)this.sessions.delete(key);
+    return this.unblockRequests.list().find(request=>request.id===id);
+  }
+  listUnblockRequests(token:string) {
+    if(this.account(token)?.role!=='admin')throw new AccountAccessError(403,'Accès réservé à l’administrateur plateforme.');
+    return this.unblockRequests.list();
   }
   changeAdminPassword(current: unknown, replacement: unknown) {
     if (!validNewPassword(replacement)) throw new Error('Choisissez un mot de passe de 10 à 200 caractères.');

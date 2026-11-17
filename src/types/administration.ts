@@ -4,7 +4,15 @@ export type AccountStatus = 'active' | 'suspended';
 export type AccountBlockReason = 'account_unavailable' | 'company_disabled' | 'account_suspended' | 'activation_pending' | 'email_missing' | 'email_unverified';
 export type SecurityAction = 'login_succeeded' | 'login_refused' | 'suspended' | 'reactivated' | 'sessions_revoked' |
   'email_change_requested' | 'email_verified' | 'account_activated' | 'password_reset' | 'password_changed' |
-  'email_rebound' | 'company_disabled' | 'company_reactivated' | 'company_registered';
+  'email_rebound' | 'company_disabled' | 'company_reactivated' | 'company_registered' | 'unblock_requested' | 'unblock_accepted' | 'unblock_rejected';
+export type UnblockDecision='accepted'|'rejected';
+export interface UnblockRequest {
+  id:string;login:string;companyId:string;companyName:string;email:string;createdAt:string;
+  status:'pending'|UnblockDecision;decidedAt:string|null;decidedBy:string|null;
+  accountRevision:number;companyStatus:CompanyStatus;accountStatus:AccountStatus;
+  notificationStatus:'pending'|'sent'|'error'|null;
+  identityCurrent:boolean;
+}
 export interface AdminAccount {
   login:string;companyId:string|null;companyName:string|null;companyStatus:CompanyStatus|null;
   role:'admin'|'company';email:string|null;emailVerified:boolean;pendingEmail:string|null;activationPending:boolean;

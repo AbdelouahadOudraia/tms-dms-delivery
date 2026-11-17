@@ -1,12 +1,16 @@
 # Comptes et accès — gestion de la sécurité
 
+Les comptes entreprise bloqués peuvent désormais transmettre une demande après vérification de leur e-mail. Le compteur, les décisions confirmées et les notifications se trouvent dans la même rubrique. Voir [Demandes de déblocage](DEMANDES_DEBLOCAGE.md) pour le parcours, les protections, les fichiers et les vérifications de cette évolution.
+
 ## Fonctionnement livré
 
 La page **Administration → Comptes et accès** complète la gestion des entreprises. Elle affiche l’identifiant technique du compte, son e-mail actuel, son type, son entreprise, son statut indépendant et l’accès effectif avec ses motifs de blocage. La vérification de l’e-mail reste dans la fiche détaillée.
 
 La recherche couvre les comptes, les e-mails et les noms d’entreprise. Les filtres de type et de statut sont retirés de cette version simplifiée. Sur mobile, les lignes deviennent des cartes lisibles. Les données d’accès viennent du serveur. L’action du super administrateur est **Mon compte** ; celle d’un compte entreprise est **Gérer l’accès**.
 
-**Gérer l’accès** ouvre trois rubriques : **Informations du compte**, **Gestion de l’accès**, **Historique de sécurité**. La dernière connexion réussie n’est affichée que si sa date a été réellement enregistrée. Le lien vers la fiche entreprise réutilise son formulaire e-mail existant. Le bouton **Actualiser** de l’en-tête est l’unique commande d’actualisation.
+**Gérer l’accès** ouvre trois rubriques : **Informations du compte**, **Gestion de l’accès**, **Historique de sécurité**. La première utilise deux colonnes dès la tablette et une colonne sur mobile, sans champ Type de compte. La dernière connexion réussie n’est affichée que si sa date a été réellement enregistrée. Le lien vers la fiche entreprise réutilise son formulaire e-mail existant. Les pages d’administration n’ont plus de bouton **Actualiser** : les résultats des opérations et le mécanisme partagé mettent à jour les données et l’historique. Les autres sessions sont prises en compte par notification entre onglets ou relecture périodique de 15 secondes ; le retour dans la fenêtre relance aussi une lecture. Voir [Actualisation automatique](ACTUALISATION_AUTOMATIQUE.md) pour les fréquences, la protection des brouillons et les fichiers concernés.
+
+La simplification de cette fiche modifie uniquement `src/components/admin/AccountAccess.tsx`, l’affichage conditionnel du bouton dans `src/components/admin/AdminArea.tsx` et les guides `docs/COMPTES_ACCES.md` / `docs/DEMO.md`. Aucun backend ni mécanisme de sécurité n’est modifié. Vérifications : 8 tests ciblés réussis, TypeScript et build réussis ; Chrome confirme l’absence du bouton et du champ, les mises à jour après blocage/déblocage et changement d’e-mail, les confirmations, l’historique et les formats 320/768/1440. Les tests navigateur utilisent une base temporaire ; les bases existantes et leurs journaux restent inchangés. L’avertissement existant de taille du bundle demeure.
 
 ## Règles d’accès
 
@@ -55,7 +59,7 @@ Le rapport joint est utilisé comme recommandation de conception, sans présente
 5. Dans une autre fenêtre, vérifier le refus de connexion et d’accès depuis une session précédemment ouverte.
 6. Vérifier que l’entreprise est toujours active et que ses données sont conservées.
 7. Cliquer sur **Débloquer le compte**, confirmer, puis se reconnecter avec son e-mail.
-8. Utiliser le bouton **Actualiser** de l’en-tête pour recharger la fiche et son historique.
+8. Vérifier que les statuts et l’historique se mettent à jour après l’opération, sans bouton Actualiser. Après une modification dans une autre fenêtre, revenir dans celle de la fiche pour recharger les informations.
 9. Consulter les 20 derniers événements du compte et les raisons d’accès.
 10. Pour vérifier l’indépendance des statuts, bloquer le compte, désactiver puis réactiver son entreprise : le compte doit rester bloqué.
 11. Désactiver à nouveau l’entreprise et débloquer le compte : l’entreprise doit rester désactivée, sans accès ni synchronisation.

@@ -5,6 +5,7 @@ import { api, companyPath, networkMessage } from '../../context/companyApi';
 import { SalesDialog } from '../backoffice/SalesUI';
 import { adminLink, Field, Panel } from './AdminUI';
 import type { AdminCompany, CompanyStatus } from '../../types/administration';
+import {useServerDraft} from '../../hooks/useServerDraft';
 
 function useSubmit() {
   const lock = useRef(false);
@@ -37,7 +38,7 @@ function FormError({ message }: { message: string }) {
 
 export function CompanyEmailForm({company,notify}: {company: AdminCompany; notify(message: string):void}) {
   const demo=useDemoMode();
-  const [address,setAddress] = useState(company.pendingEmail ?? company.email ?? '');
+  const [address,setAddress] = useServerDraft(company.pendingEmail ?? company.email ?? '');
   const {busy,error,submit} = useSubmit();
   const changed = address.trim() !== (company.pendingEmail ?? company.email ?? '');
   const disabled = company.status === 'disabled';
@@ -158,7 +159,7 @@ export function AdminPassword({ changed }: { changed(): void }) {
 export function AdminEmail({email,emailVerified,pendingEmail,notify}: {email:string|null;emailVerified:boolean;pendingEmail:string|null;notify(message:string):void}) {
   const demo=useDemoMode();
   const {busy,error,submit}=useSubmit();
-  const [address,setAddress]=useState(pendingEmail??email??'');
+  const [address,setAddress]=useServerDraft(pendingEmail??email??'');
   const changed=address.trim()!==(pendingEmail??email??'');
   return <Panel title="Mon adresse e-mail"><form className="max-w-lg space-y-4 p-5 sm:p-6" onSubmit={event=>submit(event,async data=>{
     if (changed) {
